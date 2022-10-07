@@ -154,8 +154,13 @@ void JointImpedanceExampleController::update(const ros::Time& /*time*/,
   franka::RobotState robot_state = cartesian_pose_handle_->getRobotState();
   std::array<double, 7> coriolis = model_handle_->getCoriolis();
   std::array<double, 7> gravity = model_handle_->getGravity();
+  
+  // Smoothed out version of robot_state.dq
+  // double alpha = 0.99;
 
-  double alpha = 0.99;
+  // Directly using robot_state.dq
+  double alpha = 1.00;  
+  
   for (size_t i = 0; i < 7; i++) {
     dq_filtered_[i] = (1 - alpha) * dq_filtered_[i] + alpha * robot_state.dq[i];
   }
