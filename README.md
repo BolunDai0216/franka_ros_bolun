@@ -30,11 +30,8 @@ First, follow the steps in the [Franka documentation](https://frankaemika.github
 
 ```console
 curl -SLO https://www.kernel.org/pub/linux/kernel/v5.x/linux-5.11.4.tar.xz
-
 curl -SLO https://www.kernel.org/pub/linux/kernel/v5.x/linux-5.11.4.tar.sign
-
 curl -SLO https://www.kernel.org/pub/linux/kernel/projects/rt/5.11/patch-5.11.4-rt11.patch.xz
-
 curl -SLO https://www.kernel.org/pub/linux/kernel/projects/rt/5.11/patch-5.11.4-rt11.patch.sign
 ```
 
@@ -54,7 +51,6 @@ Then, finish the remaining steps in the [Franka documentation](https://frankaemi
 
 ```console
 sudo dpkg -i linux-headers-5.11.4-rt11_5.11.4-rt11-1_amd64.deb
-
 sudo dpkg -i linux-image-5.11.4-rt11_5.11.4-rt11-1_amd64.deb
 ```
 
