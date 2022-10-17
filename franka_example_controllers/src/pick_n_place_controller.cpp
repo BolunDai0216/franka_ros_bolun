@@ -78,58 +78,73 @@ void PickNPlaceController::starting(const ros::Time& /* time */) {
   zz = initial_pose_[14];
 }
 
-double schritt = 1, F_x = 1, F_y = 1, F_z = 1;
-double Pcheck = 0;
-double move = 1;
-
-// Defining the Grasp action variable (ac).
-actionlib::SimpleActionClient<franka_gripper::GraspAction> ac("franka_gripper/grasp", true);
-
-// Defining the gripper Move action variable (ac1).
-actionlib::SimpleActionClient<franka_gripper::MoveAction> ac1("franka_gripper/move", true);
+// Defining the gripper Move action variable (ac).
+actionlib::SimpleActionClient<franka_gripper::MoveAction> ac("franka_gripper/move", true);
 
 void PickNPlaceController::update(const ros::Time& /* time */, const ros::Duration& period) {
   std::array<double, 16> new_pose;
-  double x, y, z, angle, delta_x, delta_y, delta_z, ampl, f, Grasp_Width, Move_Width;
+  double x, y, z, angle, delta_x, delta_y, delta_z;
 
-  //   These steps (moves) are the conditions for Arm movement steps and object Grasp and release.
-  //   You may add any required steps to do more actions.
-  // if (move == 1) {
-  //   // x = 0.5, y = -0.45, z = 0.13;  // Go to the Object coordinations
-  //   // F_x = 1, F_y = 1, F_z = 1;
-  //   Move_Width = 0.02;
-  //   franka_gripper::MoveGoal goal1;
-  //   goal1.width = Move_Width;
-  //   goal1.speed = 0.01;  //  Closing speed. [m/s]
-  //   ac1.sendGoal(goal1);
-  // }
-  // actionlib::SimpleClientGoalState state = ac1.getState();
-  // ROS_INFO_STREAM("PickNPlaceController: gripper state -- " << state.toString().c_str());
-  // cartesian_pose_handle_->setCommand(initial_pose_);
+  if (elapsed_time_.toSec() <= 5.0) {
+    elapsed_time_ += period;
+    x = 0.407464; 
+    y = -0.276469;
 
-  x = 0.5; 
-  y = -0.2;
-  z = 0.13;
+    // Calculating the angular angle for gradual motion
+    angle = M_PI / 4 * (1 - std::cos((M_PI / 5.0) * elapsed_time_.toSec()));
+    
+    // Calculating the gradual motion increament for each axis
+    delta_x = (x - xx) * std::sin(angle);
+    delta_y = (y - yy) * std::sin(angle);
+    delta_z = (z - zz) * std::sin(angle);
+    
+    new_pose = initial_pose_;
+    new_pose[12] += delta_x;  // Updating x-axis
+    new_pose[13] += delta_y;  // Updating y-axis
 
-  elapsed_time_ += period;
+    // Sending the new position to robot Arm
+    cartesian_pose_handle_->setCommand(new_pose);
+  } else if (elapsed_time_.toSec() > 5.0 && elapsed_time_.toSec() <= 6.0) {
+    elapsed_time_ += period;
 
-  // Calculating the angular angle for gradual motion
-  angle = M_PI / 4 * (1 - std::cos((M_PI / 5.0) * elapsed_time_.toSec()));
-  
-  // Calculating the gradual motion increament for each axis
-  delta_x = (x - xx) * std::sin(angle);
-  delta_y = (y - yy) * std::sin(angle);
-  delta_z = (z - zz) * std::sin(angle);
-   
-  new_pose = initial_pose_;
-  new_pose[12] += delta_x;  // Updating x-axis
-  new_pose[13] += delta_y;  // Updating y-axis
-  new_pose[14] += delta_z;  // Updating z-axis
+    initial_pose_ = cartesian_pose_handle_->getRobotState().O_T_EE_d;
 
-  // Sending the new position to robot Arm
-  cartesian_pose_handle_->setCommand(new_pose);
+    xx = initial_pose_[12];
+    yy = initial_pose_[13];
+    zz = initial_pose_[14];
 
-  ROS_INFO_STREAM("PickNPlaceController: dx: " << delta_x << ", dy: " << delta_y << ", dz: " << delta_z);
+    // Sending the new position to robot Arm
+    cartesian_pose_handle_->setCommand(initial_pose_);
+    
+  } else if (elapsed_time_.toSec() > 6.0 && elapsed_time_.toSec() <= 11.0) {
+    elapsed_time_ += period;
+    x = 0.407464; 
+    y = -0.276469;
+    z = 0.05;
+
+    // Calculating the angular angle for gradual motion
+    angle = M_PI / 4 * (1 - std::cos((M_PI / 5.0) * (elapsed_time_.toSec() - 6.0)));
+    
+    // Calculating the gradual motion increament for each axis
+    delta_x = (x - xx) * std::sin(angle);
+    delta_y = (y - yy) * std::sin(angle);
+    delta_z = (z - zz) * std::sin(angle);
+    
+    new_pose = initial_pose_;
+    new_pose[12] += delta_x;  // Updating x-axis
+    new_pose[13] += delta_y;  // Updating y-axis
+    new_pose[14] += delta_z;  // Updating z-axis
+
+    // Sending the new position to robot Arm
+    cartesian_pose_handle_->setCommand(new_pose);
+  } else {
+    elapsed_time_ += period;
+
+    franka_gripper::MoveGoal goal;
+    goal.width = 0.06;
+    goal.speed = 0.01;  //  Closing speed. [m/s]
+    ac.sendGoal(goal);
+  }
 }
 
 }  // namespace franka_example_controllers
