@@ -1,23 +1,23 @@
-// Copyright (c) 2017 Franka Emika GmbH
-// Use of this source code is governed by the Apache-2.0 license, see LICENSE
-#include <franka_example_controllers/pick_n_place_controller.h>
-
-#include <cmath>
-#include <memory>
-#include <stdexcept>
-#include <string>
-
+#include <actionlib/client/simple_action_client.h>
 #include <controller_interface/controller_base.h>
-#include <franka_hw/franka_cartesian_command_interface.h>
+#include <franka/gripper.h>
+#include <franka_example_controllers/pick_n_place_controller.h>
+#include <franka_gripper/GraspAction.h>
+#include <franka_gripper/MoveAction.h>
 #include <hardware_interface/hardware_interface.h>
 #include <pluginlib/class_list_macros.h>
+#include <ros/node_handle.h>
 #include <ros/ros.h>
+#include <thread>
 
 namespace franka_example_controllers {
+double xx, yy, zz;
+double x_home, y_home, z_home, cnt1 = 0, cnt2 = 0;
 
 bool PickNPlaceController::init(hardware_interface::RobotHW* robot_hardware,
-                                          ros::NodeHandle& node_handle) {
+                               ros::NodeHandle& node_handle) {
   cartesian_pose_interface_ = robot_hardware->get<franka_hw::FrankaPoseCartesianInterface>();
+
   if (cartesian_pose_interface_ == nullptr) {
     ROS_ERROR(
         "PickNPlaceController: Could not get Cartesian Pose "
@@ -26,6 +26,7 @@ bool PickNPlaceController::init(hardware_interface::RobotHW* robot_hardware,
   }
 
   std::string arm_id;
+
   if (!node_handle.getParam("arm_id", arm_id)) {
     ROS_ERROR("PickNPlaceController: Could not get parameter arm_id");
     return false;
@@ -35,12 +36,12 @@ bool PickNPlaceController::init(hardware_interface::RobotHW* robot_hardware,
     cartesian_pose_handle_ = std::make_unique<franka_hw::FrankaCartesianPoseHandle>(
         cartesian_pose_interface_->getHandle(arm_id + "_robot"));
   } catch (const hardware_interface::HardwareInterfaceException& e) {
-    ROS_ERROR_STREAM(
-        "PickNPlaceController: Exception getting Cartesian handle: " << e.what());
+    ROS_ERROR_STREAM("PickNPlaceController: Exception getting Cartesian handle: " << e.what());
     return false;
   }
 
   auto state_interface = robot_hardware->get<franka_hw::FrankaStateInterface>();
+  // ************************************************************************************************
   if (state_interface == nullptr) {
     ROS_ERROR("PickNPlaceController: Could not get state interface from hardware");
     return false;
@@ -60,8 +61,7 @@ bool PickNPlaceController::init(hardware_interface::RobotHW* robot_hardware,
       }
     }
   } catch (const hardware_interface::HardwareInterfaceException& e) {
-    ROS_ERROR_STREAM(
-        "PickNPlaceController: Exception getting state handle: " << e.what());
+    ROS_ERROR_STREAM("PickNPlaceController: Exception getting state handle: " << e.what());
     return false;
   }
 
@@ -69,22 +69,67 @@ bool PickNPlaceController::init(hardware_interface::RobotHW* robot_hardware,
 }
 
 void PickNPlaceController::starting(const ros::Time& /* time */) {
+  //   You can initialize any thing here.
   initial_pose_ = cartesian_pose_handle_->getRobotState().O_T_EE_d;
   elapsed_time_ = ros::Duration(0.0);
+
+  xx = initial_pose_[12];
+  yy = initial_pose_[13];
+  zz = initial_pose_[14];
 }
 
-void PickNPlaceController::update(const ros::Time& /* time */,
-                                            const ros::Duration& period) {
+double schritt = 1, F_x = 1, F_y = 1, F_z = 1;
+double Pcheck = 0;
+double move = 1;
+
+// Defining the Grasp action variable (ac).
+actionlib::SimpleActionClient<franka_gripper::GraspAction> ac("franka_gripper/grasp", true);
+
+// Defining the gripper Move action variable (ac1).
+actionlib::SimpleActionClient<franka_gripper::MoveAction> ac1("franka_gripper/move", true);
+
+void PickNPlaceController::update(const ros::Time& /* time */, const ros::Duration& period) {
+  std::array<double, 16> new_pose;
+  double x, y, z, angle, delta_x, delta_y, delta_z, ampl, f, Grasp_Width, Move_Width;
+
+  //   These steps (moves) are the conditions for Arm movement steps and object Grasp and release.
+  //   You may add any required steps to do more actions.
+  // if (move == 1) {
+  //   // x = 0.5, y = -0.45, z = 0.13;  // Go to the Object coordinations
+  //   // F_x = 1, F_y = 1, F_z = 1;
+  //   Move_Width = 0.02;
+  //   franka_gripper::MoveGoal goal1;
+  //   goal1.width = Move_Width;
+  //   goal1.speed = 0.01;  //  Closing speed. [m/s]
+  //   ac1.sendGoal(goal1);
+  // }
+  // actionlib::SimpleClientGoalState state = ac1.getState();
+  // ROS_INFO_STREAM("PickNPlaceController: gripper state -- " << state.toString().c_str());
+  // cartesian_pose_handle_->setCommand(initial_pose_);
+
+  x = 0.5; 
+  y = -0.2;
+  z = 0.13;
+
   elapsed_time_ += period;
 
-  double radius = 0.15;
-  double angle = M_PI / 4 * (1 - std::cos(M_PI / 5.0 * elapsed_time_.toSec()));
-  double delta_x = radius * std::sin(angle);
-  double delta_z = radius * (std::cos(angle) - 1);
-  std::array<double, 16> new_pose = initial_pose_;
-  new_pose[12] -= delta_x;
-  new_pose[14] -= delta_z;
+  // Calculating the angular angle for gradual motion
+  angle = M_PI / 4 * (1 - std::cos((M_PI / 5.0) * elapsed_time_.toSec()));
+  
+  // Calculating the gradual motion increament for each axis
+  delta_x = (x - xx) * std::sin(angle);
+  delta_y = (y - yy) * std::sin(angle);
+  delta_z = (z - zz) * std::sin(angle);
+   
+  new_pose = initial_pose_;
+  new_pose[12] += delta_x;  // Updating x-axis
+  new_pose[13] += delta_y;  // Updating y-axis
+  new_pose[14] += delta_z;  // Updating z-axis
+
+  // Sending the new position to robot Arm
   cartesian_pose_handle_->setCommand(new_pose);
+
+  ROS_INFO_STREAM("PickNPlaceController: dx: " << delta_x << ", dy: " << delta_y << ", dz: " << delta_z);
 }
 
 }  // namespace franka_example_controllers
