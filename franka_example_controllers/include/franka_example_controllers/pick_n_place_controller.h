@@ -27,6 +27,7 @@ class PickNPlaceController
   std::unique_ptr<franka_hw::FrankaCartesianPoseHandle> cartesian_pose_handle_;
   ros::Duration elapsed_time_;
   std::array<double, 16> initial_pose_{};
+  std::array<double, 16> current_pose_{};
 };
 
 }  // namespace franka_example_controllers
