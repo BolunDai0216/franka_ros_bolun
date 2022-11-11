@@ -30,7 +30,7 @@ CMakeLists.txt
 franka_example_controllers_plugin.xml
 ```
 
-To enable simulation of the new controller, the content in the file
+To enable simulation of the new controller, in `franka_gazebo`, the content in the file
 
 ```
 config/sim_controllers.yaml
