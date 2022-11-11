@@ -4,6 +4,7 @@ project(franka_example_controllers)
 set(CMAKE_BUILD_TYPE Release)
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_INSTALL_PREFIX $ENV{CONDA_PREFIX})
 
 find_package(catkin REQUIRED COMPONENTS
   controller_interface
@@ -26,6 +27,8 @@ find_package(catkin REQUIRED COMPONENTS
 )
 
 find_package(Eigen3 REQUIRED)
+find_package(proxsuite REQUIRED)
+find_package(pinocchio REQUIRED)
 find_package(Franka 0.9.0 QUIET)
 if(NOT Franka_FOUND)
   find_package(Franka 0.8.0 REQUIRED)
@@ -94,6 +97,8 @@ add_dependencies(franka_example_controllers
 )
 
 target_link_libraries(franka_example_controllers PUBLIC
+  pinocchio::pinocchio
+  proxsuite::proxsuite
   ${Franka_LIBRARIES}
   ${catkin_LIBRARIES}
 )

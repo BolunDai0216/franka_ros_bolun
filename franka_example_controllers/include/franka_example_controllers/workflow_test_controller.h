@@ -2,6 +2,21 @@
 // Use of this source code is governed by the Apache-2.0 license, see LICENSE
 #pragma once
 
+#include <pinocchio/fwd.hpp>
+#include <pinocchio/parsers/urdf.hpp>
+#include <pinocchio/algorithm/joint-configuration.hpp>
+#include <pinocchio/algorithm/rnea.hpp>
+#include <pinocchio/algorithm/kinematics.hpp>
+#include <pinocchio/algorithm/jacobian.hpp>
+#include <pinocchio/algorithm/aba.hpp>
+#include <pinocchio/algorithm/rnea.hpp>
+#include <pinocchio/algorithm/crba.hpp>
+#include <pinocchio/algorithm/frames.hpp>
+#include <pinocchio/multibody/model.hpp>
+#include <pinocchio/algorithm/model.hpp>
+
+#include <proxsuite/proxqp/dense/dense.hpp>
+
 #include <array>
 #include <string>
 #include <vector>
@@ -22,6 +37,9 @@ class WorkflowTestController : public controller_interface::MultiInterfaceContro
   void update(const ros::Time&, const ros::Duration& period) override;
 
  private:
+  pinocchio::Model model;
+  pinocchio::Data data;
+
   hardware_interface::PositionJointInterface* position_joint_interface_;
   std::vector<hardware_interface::JointHandle> position_joint_handles_;
   ros::Duration elapsed_time_;

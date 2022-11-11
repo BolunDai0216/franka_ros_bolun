@@ -12,6 +12,16 @@ All packages of `franka_ros` are licensed under the [Apache 2.0 license][apache-
 [apache-2.0]: https://www.apache.org/licenses/LICENSE-2.0.html
 [fci-docs]: https://frankaemika.github.io/docs
 
+## How to use conda installed packages
+
+First activate the conda environment, then when running `catkin_make`, either add a flag `-DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX` or add
+
+```make
+set(CMAKE_INSTALL_PREFIX $ENV{CONDA_PREFIX})
+```
+
+to your `CMakeLists.txt` file. Remember to link the libraries!
+
 ## Files that need to changed if adding another controller
 
 In the `franka_example_controller` package, the following files need to be created
