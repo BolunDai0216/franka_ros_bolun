@@ -59,4 +59,9 @@
           A controller that picks up an object and places the object at another position.
       </description>
   </class>
+  <class name="franka_example_controllers/WorkflowTestController" type="franka_example_controllers::WorkflowTestController" base_class_type="controller_interface::ControllerBase">
+    <description>
+      A controller that tests the workflow of using Pinocchio and ProxSuite.
+    </description>
+  </class>
 </library>

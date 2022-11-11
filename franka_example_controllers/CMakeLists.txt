@@ -82,6 +82,7 @@ add_library(franka_example_controllers
   src/teleop_joint_pd_example_controller.cpp
   src/joint_wall.cpp
   src/pick_n_place_controller.cpp
+  src/workflow_test_controller.cpp
 )
 
 add_dependencies(franka_example_controllers
