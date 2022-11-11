@@ -12,6 +12,32 @@ All packages of `franka_ros` are licensed under the [Apache 2.0 license][apache-
 [apache-2.0]: https://www.apache.org/licenses/LICENSE-2.0.html
 [fci-docs]: https://frankaemika.github.io/docs
 
+## Files that need to changed if adding another controller
+
+In the `franka_example_controller` package, the following files need to be created
+
+```
+include/franka_example_controllers/new_controller.h
+launch/new_controller.launch
+src/new_controller.cpp
+```
+
+the content of the following files need to be altered
+
+```
+config/franka_example_controllers.yaml
+CMakeLists.txt
+franka_example_controllers_plugin.xml
+```
+
+To enable simulation of the new controller, the content in the file
+
+```
+config/sim_controllers.yaml
+```
+
+needs to be altered.
+
 ## How to test a controller in gazebo
 
 To test a controller's performance in gazebo, run the command
