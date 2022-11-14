@@ -64,4 +64,9 @@
       A controller that tests the workflow of using Pinocchio and ProxSuite.
     </description>
   </class>
+  <class name="franka_example_controllers/InverseDynamicsController" type="franka_example_controllers::InverseDynamicsController" base_class_type="controller_interface::ControllerBase">
+    <description>
+      An inverse dynamics controller.
+    </description>
+  </class>
 </library>
