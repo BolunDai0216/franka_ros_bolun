@@ -28,6 +28,9 @@
 #include <franka_hw/franka_state_interface.h>
 #include <franka_hw/trigger_rate.h>
 
+// #include <eigen/Core>
+// #include <Eigen/Geometry> 
+
 namespace franka_example_controllers {
 
 class InverseDynamicsController : public controller_interface::MultiInterfaceController<franka_hw::FrankaModelInterface, 
@@ -54,12 +57,18 @@ class InverseDynamicsController : public controller_interface::MultiInterfaceCon
   Eigen::Matrix<double, 3, 3> R_start;
 
   // Initial orientation error
-  Eigen::Matrix<double, 3, 1> orientation_error_axis;
-  double orientation_error_angle;
+  Eigen::Matrix<double, 3, 3> R_error;
+  Eigen::Vector3d orientation_error_axis;
+  Eigen::AngleAxisd::Scalar orientation_error_angle;
 
   // Target position and orientation at each time step
   Eigen::Matrix<double, 3, 1> p_target;
+  Eigen::Matrix<double, 3, 1> v_target;
+  Eigen::Matrix<double, 3, 1> a_target;
   Eigen::Matrix<double, 3, 3> R_target;
+  Eigen::AngleAxisd::Scalar angle_target;
+  Eigen::Vector3d w_target;
+  Eigen::Vector3d dw_target;
 
   // Terminal target position and orientation
   Eigen::Matrix<double, 3, 1> p_end;

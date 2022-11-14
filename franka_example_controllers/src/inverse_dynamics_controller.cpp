@@ -105,6 +105,21 @@ void InverseDynamicsController::starting(const ros::Time& /* time */) {
 
   // initialize controller clock
   controlller_clock = 0.0;
+
+  // get initial end-effector position and orientation
+  Eigen::Affine3d T_EE(Eigen::Matrix4d::Map(initial_state.O_T_EE.data()));
+  p_start = T_EE.translation();
+  R_start = T_EE.rotation();
+  
+  // set terminal end-effector position and orientation
+  p_end << 0.3, 0.3, 0.2;
+  R_end = T_EE.rotation();
+
+  // compute orientation error between initial and terminal configuration
+  R_error = R_end * R_start.transpose();
+  Eigen::AngleAxisd AngleAxisError(R_error);
+  orientation_error_axis = AngleAxisError.axis();
+  orientation_error_angle = AngleAxisError.angle();
 }
 
 void InverseDynamicsController::update(const ros::Time& /*time*/, const ros::Duration& period) {
@@ -122,6 +137,18 @@ void InverseDynamicsController::update(const ros::Time& /*time*/, const ros::Dur
 
   alpha_func(controlller_clock);
 
+  // compute positional targets
+  p_target = p_start + alpha * (p_end - p_start);
+  v_target = dalpha * (p_end - p_start);
+  a_target = ddalpha * (p_end - p_start);
+
+  // compute orientaional targets
+  angle_target = alpha * orientation_error_angle;
+  Eigen::AngleAxisd AngleAxisTarget(angle_target, orientation_error_axis);
+  R_target = AngleAxisTarget.toRotationMatrix() * R_start;
+  w_target = dalpha * orientation_error_angle * orientation_error_axis;
+  dw_target = ddalpha * orientation_error_angle * orientation_error_axis;
+
   // set torque
   for (size_t i = 0; i < 7; ++i) {
     joint_handles_[i].setCommand(0.0 - dq[i]);
@@ -136,11 +163,10 @@ void InverseDynamicsController::alpha_func(const double& t) {
     double sin_ = std::sin(M_PI * t / movement_duration);
     double cos_ = std::cos(M_PI * t / movement_duration);
     double T2 = movement_duration * movement_duration;
-    double sin__ = sin_ * sin_;
 
     alpha = _sin;
     dalpha = (M_PI * M_PI / (4 * movement_duration)) * _cos * sin_;
-    ddalpha = (std::pow(M_PI, 3) / (4 * T2)) * cos_ * _cos - (std::pow(M_PI, 4) / (16 * T2)) * sin__ * _sin;
+    ddalpha = (std::pow(M_PI, 3) / (4 * T2)) * cos_ * _cos - (std::pow(M_PI, 4) / (16 * T2)) * sin_ * sin_ * _sin;
   } else {
     alpha = 1.0;
     dalpha = 0.0;
