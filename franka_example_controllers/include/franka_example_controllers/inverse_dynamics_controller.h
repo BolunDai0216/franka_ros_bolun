@@ -52,16 +52,16 @@ class InverseDynamicsController : public controller_interface::MultiInterfaceCon
   std::unique_ptr<franka_hw::FrankaModelHandle> model_handle_;
   std::vector<hardware_interface::JointHandle> joint_handles_;
 
-  // Initial position and orientation
+  // initial position and orientation
   Eigen::Matrix<double, 3, 1> p_start;
   Eigen::Matrix<double, 3, 3> R_start;
 
-  // Initial orientation error
+  // initial orientation error
   Eigen::Matrix<double, 3, 3> R_error;
   Eigen::Vector3d orientation_error_axis;
   Eigen::AngleAxisd::Scalar orientation_error_angle;
 
-  // Target position and orientation at each time step
+  // target position and orientation at each time step
   Eigen::Matrix<double, 3, 1> p_target;
   Eigen::Matrix<double, 3, 1> v_target;
   Eigen::Matrix<double, 3, 1> a_target;
@@ -70,7 +70,11 @@ class InverseDynamicsController : public controller_interface::MultiInterfaceCon
   Eigen::Vector3d w_target;
   Eigen::Vector3d dw_target;
 
-  // Terminal target position and orientation
+  // measured position and orientation
+  Eigen::Matrix<double, 3, 1> p_current;
+  Eigen::Matrix<double, 3, 3> R_current;
+
+  // terminal target position and orientation
   Eigen::Matrix<double, 3, 1> p_end;
   Eigen::Matrix<double, 3, 3> R_end;
 
@@ -84,6 +88,18 @@ class InverseDynamicsController : public controller_interface::MultiInterfaceCon
   double alpha;
   double dalpha;
   double ddalpha;
+
+  // end-effector frame id in pinocchio
+  int ee_frame_id;
+
+  // end-effector Jacobian
+  Eigen::Matrix<double, 6, 7> J;
+
+  // time deriative of end-effector Jacobian 
+  Eigen::Matrix<double, 6, 7> dJ;
+
+  // applied torque
+  Eigen::Matrix<double, 7, 1> torques;
 };
 
 }  // namespace franka_example_controllers

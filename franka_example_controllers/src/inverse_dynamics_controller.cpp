@@ -1,4 +1,6 @@
 #include <franka_example_controllers/inverse_dynamics_controller.h>
+#include <franka/robot_state.h>
+#include <franka_example_controllers/pseudo_inversion.h>
 
 #include <cmath>
 
@@ -120,6 +122,8 @@ void InverseDynamicsController::starting(const ros::Time& /* time */) {
   Eigen::AngleAxisd AngleAxisError(R_error);
   orientation_error_axis = AngleAxisError.axis();
   orientation_error_angle = AngleAxisError.angle();
+
+  ee_frame_id = model.getFrameId("fr3_hand_tcp");
 }
 
 void InverseDynamicsController::update(const ros::Time& /*time*/, const ros::Duration& period) {
@@ -131,10 +135,24 @@ void InverseDynamicsController::update(const ros::Time& /*time*/, const ros::Dur
   Eigen::Map<Eigen::Matrix<double, 7, 1>> q(robot_state.q.data());
   Eigen::Map<Eigen::Matrix<double, 7, 1>> dq(robot_state.dq.data());
 
+  // get current end-effector position and orientation
+  Eigen::Affine3d T_EE_current(Eigen::Matrix4d::Map(robot_state.O_T_EE.data()));
+  p_current = T_EE_current.translation();
+  R_current = T_EE_current.rotation();
+
   // update pinocchio robot model
   pin::forwardKinematics(model, data, q, dq);
+  pin::computeJointJacobians(model, data, q); 
   pin::updateFramePlacements(model, data); 
 
+  // get Jacobian matrix
+  pin::getFrameJacobian(model, data, ee_frame_id, pin::LOCAL_WORLD_ALIGNED, J);
+
+  // get time derivative of positional Jacobian
+  pin::computeJointJacobiansTimeVariation(model, data, q, dq);
+  pin::getFrameJacobianTimeVariation(model, data, ee_frame_id, pin::LOCAL_WORLD_ALIGNED, dJ);
+
+  // get α, dα, ddα
   alpha_func(controlller_clock);
 
   // compute positional targets
@@ -149,19 +167,59 @@ void InverseDynamicsController::update(const ros::Time& /*time*/, const ros::Dur
   w_target = dalpha * orientation_error_angle * orientation_error_axis;
   dw_target = ddalpha * orientation_error_angle * orientation_error_axis;
 
+  // compute orientation error with targets
+  Eigen::Matrix<double, 3, 3> R_err = R_target * R_current.transpose();
+  Eigen::AngleAxisd AngleAxisErr(R_err);
+  Eigen::Vector3d rotvec_err = AngleAxisErr.axis() * AngleAxisErr.angle();
+
+  // compute position error with targets
+  Eigen::Matrix<double, 3, 1> p_error = p_target - p_current;
+
+  // get errors and targets for torque computation
+  Eigen::Matrix<double, 6, 1> P_err; 
+  Eigen::Matrix<double, 6, 1> dP_target;
+  Eigen::Matrix<double, 6, 1> ddP_target;
+
+  P_err << p_error, rotvec_err;
+  dP_target << v_target, w_target;
+  ddP_target << a_target, dw_target; 
+
+  // compute pseudo-inverse of Jacobian
+  Eigen::MatrixXd pJ_EE;
+  pseudoInverse(J, pJ_EE);
+
+  // get estimated dP
+  auto dP = J * dq;
+  auto a = ddP_target + 5 * P_err + 0.1 * (dP_target - dP) - dJ * dq;
+  auto ddq_desired = pJ_EE * a;
+
+  // get mass matrix
+  std::array<double, 49> mass_array = model_handle_->getMass();
+  Eigen::Map<Eigen::Matrix<double, 7, 7>> M(mass_array.data());
+
+  // get Coriolis and centrifugal terms
+  std::array<double, 7> coriolis_array = model_handle_->getCoriolis();
+  Eigen::Map<Eigen::Matrix<double, 7, 1>> coriolis(coriolis_array.data());
+
+  // torques = M * (ddq_desired - 0.1 * dq) + coriolis;
+  torques = 10 * (pJ_EE * P_err) + 0.1 * (pJ_EE * dP_target - dq);
+
   // set torque
   for (size_t i = 0; i < 7; ++i) {
-    joint_handles_[i].setCommand(0.0 - dq[i]);
+    joint_handles_[i].setCommand(torques[i]);
   }
+
+  ROS_INFO_STREAM("ee_pos: " << p_current);
 }
 
 void InverseDynamicsController::alpha_func(const double& t) {
-  if (t < movement_duration){
-    double beta = (M_PI / 4) * (1 - std::cos(M_PI * t / movement_duration));
-    double _sin = std::sin(beta);
-    double _cos = std::cos(beta);
+  if (t <= movement_duration){
     double sin_ = std::sin(M_PI * t / movement_duration);
     double cos_ = std::cos(M_PI * t / movement_duration);
+    double beta = (M_PI / 4) * (1 - cos_);
+    double _sin = std::sin(beta);
+    double _cos = std::cos(beta);
+
     double T2 = movement_duration * movement_duration;
 
     alpha = _sin;
