@@ -103,7 +103,7 @@ void InverseDynamicsController::starting(const ros::Time& /* time */) {
   franka::RobotState initial_state = state_handle_->getRobotState();
 
   // set movement duration
-  movement_duration = 30.0;
+  movement_duration = 10.0;
 
   // initialize controller clock
   controlller_clock = 0.0;
@@ -202,7 +202,7 @@ void InverseDynamicsController::update(const ros::Time& /*time*/, const ros::Dur
   Eigen::Map<Eigen::Matrix<double, 7, 1>> coriolis(coriolis_array.data());
 
   // torques = M * (ddq_desired - 0.1 * dq) + coriolis;
-  torques = 10 * (pJ_EE * P_err) + 0.1 * (pJ_EE * dP_target - dq);
+  torques = 300 * (pJ_EE * P_err) + 10 * (pJ_EE * dP_target - dq);
 
   // set torque
   for (size_t i = 0; i < 7; ++i) {
