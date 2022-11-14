@@ -37,6 +37,7 @@ class InverseDynamicsController : public controller_interface::MultiInterfaceCon
   bool init(hardware_interface::RobotHW* robot_hardware, ros::NodeHandle& node_handle) override;
   void starting(const ros::Time&) override;
   void update(const ros::Time&, const ros::Duration& period) override;
+  void alpha_func(const double& t);
 
  private:
   // pinocchio model & data
@@ -47,6 +48,33 @@ class InverseDynamicsController : public controller_interface::MultiInterfaceCon
   std::unique_ptr<franka_hw::FrankaStateHandle> state_handle_;
   std::unique_ptr<franka_hw::FrankaModelHandle> model_handle_;
   std::vector<hardware_interface::JointHandle> joint_handles_;
+
+  // Initial position and orientation
+  Eigen::Matrix<double, 3, 1> p_start;
+  Eigen::Matrix<double, 3, 3> R_start;
+
+  // Initial orientation error
+  Eigen::Matrix<double, 3, 1> orientation_error_axis;
+  double orientation_error_angle;
+
+  // Target position and orientation at each time step
+  Eigen::Matrix<double, 3, 1> p_target;
+  Eigen::Matrix<double, 3, 3> R_target;
+
+  // Terminal target position and orientation
+  Eigen::Matrix<double, 3, 1> p_end;
+  Eigen::Matrix<double, 3, 3> R_end;
+
+  // clock only for task controller
+  double controlller_clock;
+
+  // movement duration of a segment
+  double movement_duration;
+
+  // alpha values
+  double alpha;
+  double dalpha;
+  double ddalpha;
 };
 
 }  // namespace franka_example_controllers

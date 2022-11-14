@@ -97,11 +97,20 @@ bool InverseDynamicsController::init(hardware_interface::RobotHW* robot_hw,
 }
 
 void InverseDynamicsController::starting(const ros::Time& /* time */) {
-    // get intial robot state
-    franka::RobotState initial_state = state_handle_->getRobotState();
+  // get intial robot state
+  franka::RobotState initial_state = state_handle_->getRobotState();
+
+  // set movement duration
+  movement_duration = 30.0;
+
+  // initialize controller clock
+  controlller_clock = 0.0;
 }
 
 void InverseDynamicsController::update(const ros::Time& /*time*/, const ros::Duration& period) {
+  // update controller clock
+  controlller_clock += period.toSec();
+
   // get joint angles and angular velocities
   franka::RobotState robot_state = state_handle_->getRobotState();
   Eigen::Map<Eigen::Matrix<double, 7, 1>> q(robot_state.q.data());
@@ -111,9 +120,31 @@ void InverseDynamicsController::update(const ros::Time& /*time*/, const ros::Dur
   pin::forwardKinematics(model, data, q, dq);
   pin::updateFramePlacements(model, data); 
 
+  alpha_func(controlller_clock);
+
   // set torque
   for (size_t i = 0; i < 7; ++i) {
     joint_handles_[i].setCommand(0.0 - dq[i]);
+  }
+}
+
+void InverseDynamicsController::alpha_func(const double& t) {
+  if (t < movement_duration){
+    double beta = (M_PI / 4) * (1 - std::cos(M_PI * t / movement_duration));
+    double _sin = std::sin(beta);
+    double _cos = std::cos(beta);
+    double sin_ = std::sin(M_PI * t / movement_duration);
+    double cos_ = std::cos(M_PI * t / movement_duration);
+    double T2 = movement_duration * movement_duration;
+    double sin__ = sin_ * sin_;
+
+    alpha = _sin;
+    dalpha = (M_PI * M_PI / (4 * movement_duration)) * _cos * sin_;
+    ddalpha = (std::pow(M_PI, 3) / (4 * T2)) * cos_ * _cos - (std::pow(M_PI, 4) / (16 * T2)) * sin__ * _sin;
+  } else {
+    alpha = 1.0;
+    dalpha = 0.0;
+    ddalpha = 0.0;
   }
 }
 
