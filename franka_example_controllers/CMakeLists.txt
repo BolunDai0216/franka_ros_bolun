@@ -87,6 +87,7 @@ add_library(franka_example_controllers
   src/pick_n_place_controller.cpp
   src/workflow_test_controller.cpp
   src/inverse_dynamics_controller.cpp
+  src/proxsuite_controller.cpp
 )
 
 add_dependencies(franka_example_controllers
