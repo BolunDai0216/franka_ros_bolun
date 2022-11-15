@@ -100,6 +100,10 @@ class InverseDynamicsController : public controller_interface::MultiInterfaceCon
 
   // applied torque
   Eigen::Matrix<double, 7, 1> torques;
+
+  // Define Kp and Kd
+  Eigen::Matrix<double, 6, 6> Kp;
+  Eigen::Matrix<double, 6, 6> Kd;
 };
 
 }  // namespace franka_example_controllers

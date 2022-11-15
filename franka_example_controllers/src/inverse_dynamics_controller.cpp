@@ -103,7 +103,7 @@ void InverseDynamicsController::starting(const ros::Time& /* time */) {
   franka::RobotState initial_state = state_handle_->getRobotState();
 
   // set movement duration
-  movement_duration = 10.0;
+  movement_duration = 5.0;
 
   // initialize controller clock
   controlller_clock = 0.0;
@@ -124,6 +124,19 @@ void InverseDynamicsController::starting(const ros::Time& /* time */) {
   orientation_error_angle = AngleAxisError.angle();
 
   ee_frame_id = model.getFrameId("fr3_hand_tcp");
+
+  Kp << 1000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
+        0.0, 2000.0, 0.0, 0.0, 0.0, 0.0, 
+        0.0, 0.0, 1000.0, 0.0, 0.0, 0.0, 
+        0.0, 0.0, 0.0, 2000.0, 0.0, 0.0,
+        0.0, 0.0, 0.0, 0.0, 2000.0, 0.0, 
+        0.0, 0.0, 0.0, 0.0, 0.0, 2000.0;
+  Kd << 10.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
+        0.0, 5.0, 0.0, 0.0, 0.0, 0.0, 
+        0.0, 0.0, 10.0, 0.0, 0.0, 0.0, 
+        0.0, 0.0, 0.0, 10.0, 0.0, 0.0,
+        0.0, 0.0, 0.0, 0.0, 10.0, 0.0, 
+        0.0, 0.0, 0.0, 0.0, 0.0, 10.0;
 }
 
 void InverseDynamicsController::update(const ros::Time& /*time*/, const ros::Duration& period) {
@@ -190,7 +203,8 @@ void InverseDynamicsController::update(const ros::Time& /*time*/, const ros::Dur
 
   // get estimated dP
   auto dP = J * dq;
-  auto a = ddP_target + 5 * P_err + 0.1 * (dP_target - dP) - dJ * dq;
+  // auto a = ddP_target + 1000 * P_err + 10 * (dP_target - dP) - dJ * dq;
+  auto a = ddP_target + Kp * P_err + Kd * (dP_target - dP) - dJ * dq;
   auto ddq_desired = pJ_EE * a;
 
   // get mass matrix
@@ -201,8 +215,11 @@ void InverseDynamicsController::update(const ros::Time& /*time*/, const ros::Dur
   std::array<double, 7> coriolis_array = model_handle_->getCoriolis();
   Eigen::Map<Eigen::Matrix<double, 7, 1>> coriolis(coriolis_array.data());
 
-  // torques = M * (ddq_desired - 0.1 * dq) + coriolis;
-  torques = 300 * (pJ_EE * P_err) + 10 * (pJ_EE * dP_target - dq);
+  // inverse dynamics controller
+  torques = M * ddq_desired + coriolis;
+
+  // joint space PD controller
+  // torques = 300 * (pJ_EE * P_err) + 10 * (pJ_EE * dP_target - dq);
 
   // set torque
   for (size_t i = 0; i < 7; ++i) {
