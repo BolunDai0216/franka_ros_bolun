@@ -127,7 +127,7 @@ void InverseDynamicsController::starting(const ros::Time& /* time */) {
   controlller_clock = 0.0;
   
   // set terminal end-effector position and orientation
-  p_end << 0.3, 0.4, 0.2;
+  p_end << 0.4, 0.4, 0.2;
   R_end = data.oMf[ee_frame_id].rotation();
 
   // compute orientation error between initial and terminal configuration
@@ -154,7 +154,7 @@ void InverseDynamicsController::starting(const ros::Time& /* time */) {
   qp_H = Eigen::MatrixXd::Zero(14, 14);
   qp_g = Eigen::MatrixXd::Zero(14, 1);
 
-  q_nominal << 0.0, -0.785398163, 0.0, -2.35619449, 0.0, 1.57079632679, 0.785398163397;
+  q_nominal << q[0], q[1], q[2], q[3], q[4], q[5], q[6];
 }
 
 void InverseDynamicsController::update(const ros::Time& /*time*/, const ros::Duration& period) {
@@ -165,6 +165,9 @@ void InverseDynamicsController::update(const ros::Time& /*time*/, const ros::Dur
   franka::RobotState robot_state = state_handle_->getRobotState();
   Eigen::Map<Eigen::Matrix<double, 7, 1>> q(robot_state.q.data());
   Eigen::Map<Eigen::Matrix<double, 7, 1>> dq(robot_state.dq.data());
+
+  // convert to Eigen
+  Eigen::Map<Eigen::Matrix<double, 7, 1>> tau_J_d(robot_state.tau_J_d.data());
 
   // update pinocchio robot model
   pin::forwardKinematics(model, data, q, dq);
@@ -233,12 +236,45 @@ void InverseDynamicsController::update(const ros::Time& /*time*/, const ros::Dur
   get_qp_parameters(q, dq, a, M, coriolis);
   solve_qp();
 
+  // Saturate torque rate to avoid discontinuities
+  torques << saturateTorqueRate(torques, tau_J_d);
+
   // set torque
   for (size_t i = 0; i < 7; ++i) {
     joint_handles_[i].setCommand(torques[i]);
   }
 
   ROS_INFO_STREAM("ee_pos: " << p_current);
+
+  // if (controlller_clock >= (movement_duration + 2.0)) {
+  //   controlller_clock = 0.0;
+
+  //   // get current end-effector position and orientation
+  //   p_start = data.oMf[ee_frame_id].translation();
+  //   R_start = data.oMf[ee_frame_id].rotation();
+
+  //   // set terminal end-effector position and orientation
+  //   p_end[1] = -p_end[1];
+  //   R_end = data.oMf[ee_frame_id].rotation();
+
+  //   // compute orientation error between initial and terminal configuration
+  //   R_error = R_end * R_start.transpose();
+  //   Eigen::AngleAxisd AngleAxisError(R_error);
+  //   orientation_error_axis = AngleAxisError.axis();
+  //   orientation_error_angle = AngleAxisError.angle();
+  // }
+}
+
+Eigen::Matrix<double, 7, 1> InverseDynamicsController::saturateTorqueRate(
+    const Eigen::Matrix<double, 7, 1>& tau_d_calculated,
+    const Eigen::Matrix<double, 7, 1>& tau_J_d) {  // NOLINT (readability-identifier-naming)
+  Eigen::Matrix<double, 7, 1> tau_d_saturated{};
+  for (size_t i = 0; i < 7; i++) {
+    double difference = tau_d_calculated[i] - tau_J_d[i];
+    tau_d_saturated[i] =
+        tau_J_d[i] + std::max(std::min(difference, delta_tau_max_), -delta_tau_max_);
+  }
+  return tau_d_saturated;
 }
 
 void InverseDynamicsController::alpha_func(const double& t) {

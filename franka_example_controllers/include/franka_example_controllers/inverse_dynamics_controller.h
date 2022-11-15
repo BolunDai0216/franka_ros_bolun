@@ -52,6 +52,11 @@ class InverseDynamicsController : public controller_interface::MultiInterfaceCon
                          const Eigen::Matrix<double, 7, 1>& coriolis);
 
  private:
+  // Saturation
+  Eigen::Matrix<double, 7, 1> saturateTorqueRate(
+      const Eigen::Matrix<double, 7, 1>& tau_d_calculated,
+      const Eigen::Matrix<double, 7, 1>& tau_J_d);  // NOLINT (readability-identifier-naming)
+
   // pinocchio model & data
   pinocchio::Model model;
   pinocchio::Data data;
@@ -60,6 +65,8 @@ class InverseDynamicsController : public controller_interface::MultiInterfaceCon
   std::unique_ptr<franka_hw::FrankaStateHandle> state_handle_;
   std::unique_ptr<franka_hw::FrankaModelHandle> model_handle_;
   std::vector<hardware_interface::JointHandle> joint_handles_;
+
+  const double delta_tau_max_{1.0};
 
   // initial position and orientation
   Eigen::Matrix<double, 3, 1> p_start;
