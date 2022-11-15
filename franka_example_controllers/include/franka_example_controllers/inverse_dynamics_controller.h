@@ -28,6 +28,9 @@
 #include <franka_hw/franka_state_interface.h>
 #include <franka_hw/trigger_rate.h>
 
+#include <proxsuite/proxqp/dense/dense.hpp>
+#include <proxsuite/proxqp/utils/random_qp_problems.hpp>
+
 // #include <eigen/Core>
 // #include <Eigen/Geometry> 
 
@@ -41,6 +44,12 @@ class InverseDynamicsController : public controller_interface::MultiInterfaceCon
   void starting(const ros::Time&) override;
   void update(const ros::Time&, const ros::Duration& period) override;
   void alpha_func(const double& t);
+  void solve_qp(void);
+  void get_qp_parameters(const Eigen::Matrix<double, 7, 1>& q, 
+                         const Eigen::Matrix<double, 7, 1>& dq, 
+                         const Eigen::Matrix<double, 6, 1>& a, 
+                         const Eigen::Matrix<double, 7, 7>& M, 
+                         const Eigen::Matrix<double, 7, 1>& coriolis);
 
  private:
   // pinocchio model & data
@@ -78,6 +87,9 @@ class InverseDynamicsController : public controller_interface::MultiInterfaceCon
   Eigen::Matrix<double, 3, 1> p_end;
   Eigen::Matrix<double, 3, 3> R_end;
 
+  // pseudo-inverse
+  Eigen::MatrixXd pJ_EE;
+
   // clock only for task controller
   double controlller_clock;
 
@@ -101,9 +113,22 @@ class InverseDynamicsController : public controller_interface::MultiInterfaceCon
   // applied torque
   Eigen::Matrix<double, 7, 1> torques;
 
-  // Define Kp and Kd
+  // define Kp and Kd
   Eigen::Matrix<double, 6, 6> Kp;
   Eigen::Matrix<double, 6, 6> Kd;
+
+  // create QP
+  // dense::QP<double> qp(14, 7, 0);
+
+  // QP initialization indicator
+  bool qp_initialized;
+
+  // define QP parameters
+  Eigen::Matrix<double, 14, 14> qp_H;
+  Eigen::Matrix<double, 14, 1> qp_g;
+  Eigen::Matrix<double, 7, 14> qp_A;
+  Eigen::Matrix<double, 7, 1> qp_b;
+  Eigen::Matrix<double, 7, 1> q_nominal;
 };
 
 }  // namespace franka_example_controllers

@@ -3,6 +3,7 @@
 #include <franka_example_controllers/pseudo_inversion.h>
 
 #include <cmath>
+#include <optional>
 
 #include <controller_interface/controller_base.h> 
 #include <hardware_interface/hardware_interface.h>
@@ -103,7 +104,7 @@ void InverseDynamicsController::starting(const ros::Time& /* time */) {
   franka::RobotState initial_state = state_handle_->getRobotState();
 
   // set movement duration
-  movement_duration = 5.0;
+  movement_duration = 10.0;
 
   // initialize controller clock
   controlller_clock = 0.0;
@@ -137,6 +138,12 @@ void InverseDynamicsController::starting(const ros::Time& /* time */) {
         0.0, 0.0, 0.0, 10.0, 0.0, 0.0,
         0.0, 0.0, 0.0, 0.0, 10.0, 0.0, 
         0.0, 0.0, 0.0, 0.0, 0.0, 10.0;
+
+  // initialize QP parameters
+  qp_H = Eigen::MatrixXd::Zero(14, 14);
+  qp_g = Eigen::MatrixXd::Zero(14, 1);
+
+  q_nominal << 0.0, -0.785398163, 0.0, -2.35619449, 0.0, 1.57079632679, 0.785398163397;
 }
 
 void InverseDynamicsController::update(const ros::Time& /*time*/, const ros::Duration& period) {
@@ -198,13 +205,12 @@ void InverseDynamicsController::update(const ros::Time& /*time*/, const ros::Dur
   ddP_target << a_target, dw_target; 
 
   // compute pseudo-inverse of Jacobian
-  Eigen::MatrixXd pJ_EE;
   pseudoInverse(J, pJ_EE);
 
   // get estimated dP
   auto dP = J * dq;
-  // auto a = ddP_target + 1000 * P_err + 10 * (dP_target - dP) - dJ * dq;
-  auto a = ddP_target + Kp * P_err + Kd * (dP_target - dP) - dJ * dq;
+  auto a = ddP_target + 2.0 * P_err + 0.2 * (dP_target - dP) - dJ * dq;
+  // auto a = ddP_target + Kp * P_err + Kd * (dP_target - dP) - dJ * dq;
   auto ddq_desired = pJ_EE * a;
 
   // get mass matrix
@@ -215,8 +221,11 @@ void InverseDynamicsController::update(const ros::Time& /*time*/, const ros::Dur
   std::array<double, 7> coriolis_array = model_handle_->getCoriolis();
   Eigen::Map<Eigen::Matrix<double, 7, 1>> coriolis(coriolis_array.data());
 
+  get_qp_parameters(q, dq, a, M, coriolis);
+  solve_qp();
+
   // inverse dynamics controller
-  torques = M * ddq_desired + coriolis;
+  // torques = M * ddq_desired + coriolis;
 
   // joint space PD controller
   // torques = 300 * (pJ_EE * P_err) + 10 * (pJ_EE * dP_target - dq);
@@ -247,6 +256,54 @@ void InverseDynamicsController::alpha_func(const double& t) {
     dalpha = 0.0;
     ddalpha = 0.0;
   }
+}
+
+void InverseDynamicsController::solve_qp(void) {
+  proxsuite::proxqp::isize dim = 14;
+  proxsuite::proxqp::isize n_eq = 7;
+  proxsuite::proxqp::isize n_in = 0;
+  proxsuite::proxqp::dense::QP<double> qp(dim, n_eq, n_in); // create the QP object
+
+  if (qp_initialized) {
+    qp.update(qp_H,
+              qp_g,
+              qp_A,
+              qp_b,
+              std::nullopt,
+              std::nullopt,
+              std::nullopt);
+
+  } else {
+    qp.init(qp_H,
+            qp_g,
+            qp_A,
+            qp_b,
+            std::nullopt,
+            std::nullopt,
+            std::nullopt);
+  }
+  qp.solve();
+  torques << qp.results.x[7], 
+             qp.results.x[8], 
+             qp.results.x[9], 
+             qp.results.x[10],
+             qp.results.x[11],
+             qp.results.x[12],
+             qp.results.x[13];
+}
+
+void InverseDynamicsController::get_qp_parameters(const Eigen::Matrix<double, 7, 1>& q, 
+                                                  const Eigen::Matrix<double, 7, 1>& dq, 
+                                                  const Eigen::Matrix<double, 6, 1>& a, 
+                                                  const Eigen::Matrix<double, 7, 7>& M, 
+                                                  const Eigen::Matrix<double, 7, 1>& coriolis) {
+  auto Pr = Eigen::MatrixXd::Identity(7, 7) - pJ_EE * J;
+  auto ddq_nominal = 0.5 * (q_nominal - q) - 0.2 * dq;
+
+  qp_H.topLeftCorner(7, 7) = 2 * J.transpose() * J + 2 * Pr.transpose() * Pr;
+  qp_g.topLeftCorner(7, 1) = -2 * (a.transpose() * J + ddq_nominal.transpose() * Pr.transpose() * Pr).transpose();
+  qp_A << M, -Eigen::MatrixXd::Identity(7, 7);
+  qp_b << -coriolis;
 }
 
 }  // namespace franka_example_controllers
