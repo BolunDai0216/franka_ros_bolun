@@ -103,20 +103,32 @@ void InverseDynamicsController::starting(const ros::Time& /* time */) {
   // get intial robot state
   franka::RobotState initial_state = state_handle_->getRobotState();
 
+  // get joint angles and angular velocities
+  Eigen::Map<Eigen::Matrix<double, 7, 1>> q(initial_state.q.data());
+  Eigen::Map<Eigen::Matrix<double, 7, 1>> dq(initial_state.dq.data());
+
+  // update pinocchio robot model
+  pin::forwardKinematics(model, data, q, dq);
+  pin::computeJointJacobians(model, data, q); 
+  pin::updateFramePlacements(model, data);
+  pin::computeJointJacobiansTimeVariation(model, data, q, dq); 
+
+  // define end-effector frame id in pinocchio
+  ee_frame_id = model.getFrameId("fr3_hand_tcp");
+
+  // get current end-effector position and orientation
+  p_start = data.oMf[ee_frame_id].translation();
+  R_start = data.oMf[ee_frame_id].rotation();
+
   // set movement duration
   movement_duration = 10.0;
 
   // initialize controller clock
   controlller_clock = 0.0;
-
-  // get initial end-effector position and orientation
-  Eigen::Affine3d T_EE(Eigen::Matrix4d::Map(initial_state.O_T_EE.data()));
-  p_start = T_EE.translation();
-  R_start = T_EE.rotation();
   
   // set terminal end-effector position and orientation
-  p_end << 0.3, 0.3, 0.2;
-  R_end = T_EE.rotation();
+  p_end << 0.3, 0.4, 0.2;
+  R_end = data.oMf[ee_frame_id].rotation();
 
   // compute orientation error between initial and terminal configuration
   R_error = R_end * R_start.transpose();
@@ -124,14 +136,13 @@ void InverseDynamicsController::starting(const ros::Time& /* time */) {
   orientation_error_axis = AngleAxisError.axis();
   orientation_error_angle = AngleAxisError.angle();
 
-  ee_frame_id = model.getFrameId("fr3_hand_tcp");
-
   Kp << 1000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
         0.0, 2000.0, 0.0, 0.0, 0.0, 0.0, 
         0.0, 0.0, 1000.0, 0.0, 0.0, 0.0, 
         0.0, 0.0, 0.0, 2000.0, 0.0, 0.0,
         0.0, 0.0, 0.0, 0.0, 2000.0, 0.0, 
         0.0, 0.0, 0.0, 0.0, 0.0, 2000.0;
+
   Kd << 10.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
         0.0, 5.0, 0.0, 0.0, 0.0, 0.0, 
         0.0, 0.0, 10.0, 0.0, 0.0, 0.0, 
@@ -155,21 +166,20 @@ void InverseDynamicsController::update(const ros::Time& /*time*/, const ros::Dur
   Eigen::Map<Eigen::Matrix<double, 7, 1>> q(robot_state.q.data());
   Eigen::Map<Eigen::Matrix<double, 7, 1>> dq(robot_state.dq.data());
 
-  // get current end-effector position and orientation
-  Eigen::Affine3d T_EE_current(Eigen::Matrix4d::Map(robot_state.O_T_EE.data()));
-  p_current = T_EE_current.translation();
-  R_current = T_EE_current.rotation();
-
   // update pinocchio robot model
   pin::forwardKinematics(model, data, q, dq);
   pin::computeJointJacobians(model, data, q); 
-  pin::updateFramePlacements(model, data); 
+  pin::updateFramePlacements(model, data);
+  pin::computeJointJacobiansTimeVariation(model, data, q, dq); 
+
+  // get current end-effector position and orientation
+  p_current = data.oMf[ee_frame_id].translation();
+  R_current = data.oMf[ee_frame_id].rotation();
 
   // get Jacobian matrix
   pin::getFrameJacobian(model, data, ee_frame_id, pin::LOCAL_WORLD_ALIGNED, J);
 
   // get time derivative of positional Jacobian
-  pin::computeJointJacobiansTimeVariation(model, data, q, dq);
   pin::getFrameJacobianTimeVariation(model, data, ee_frame_id, pin::LOCAL_WORLD_ALIGNED, dJ);
 
   // get α, dα, ddα
@@ -209,8 +219,7 @@ void InverseDynamicsController::update(const ros::Time& /*time*/, const ros::Dur
 
   // get estimated dP
   auto dP = J * dq;
-  auto a = ddP_target + 2.0 * P_err + 0.2 * (dP_target - dP) - dJ * dq;
-  // auto a = ddP_target + Kp * P_err + Kd * (dP_target - dP) - dJ * dq;
+  auto a = ddP_target + Kp * P_err + Kd * (dP_target - dP) - dJ * dq;
   auto ddq_desired = pJ_EE * a;
 
   // get mass matrix
@@ -223,12 +232,6 @@ void InverseDynamicsController::update(const ros::Time& /*time*/, const ros::Dur
 
   get_qp_parameters(q, dq, a, M, coriolis);
   solve_qp();
-
-  // inverse dynamics controller
-  // torques = M * ddq_desired + coriolis;
-
-  // joint space PD controller
-  // torques = 300 * (pJ_EE * P_err) + 10 * (pJ_EE * dP_target - dq);
 
   // set torque
   for (size_t i = 0; i < 7; ++i) {
@@ -264,24 +267,7 @@ void InverseDynamicsController::solve_qp(void) {
   proxsuite::proxqp::isize n_in = 0;
   proxsuite::proxqp::dense::QP<double> qp(dim, n_eq, n_in); // create the QP object
 
-  if (qp_initialized) {
-    qp.update(qp_H,
-              qp_g,
-              qp_A,
-              qp_b,
-              std::nullopt,
-              std::nullopt,
-              std::nullopt);
-
-  } else {
-    qp.init(qp_H,
-            qp_g,
-            qp_A,
-            qp_b,
-            std::nullopt,
-            std::nullopt,
-            std::nullopt);
-  }
+  qp.init(qp_H, qp_g, qp_A, qp_b, std::nullopt, std::nullopt, std::nullopt);
   qp.solve();
   torques << qp.results.x[7], 
              qp.results.x[8], 
@@ -298,7 +284,7 @@ void InverseDynamicsController::get_qp_parameters(const Eigen::Matrix<double, 7,
                                                   const Eigen::Matrix<double, 7, 7>& M, 
                                                   const Eigen::Matrix<double, 7, 1>& coriolis) {
   auto Pr = Eigen::MatrixXd::Identity(7, 7) - pJ_EE * J;
-  auto ddq_nominal = 0.5 * (q_nominal - q) - 0.2 * dq;
+  auto ddq_nominal = 10.0 * (q_nominal - q) - 1.0 * dq;
 
   qp_H.topLeftCorner(7, 7) = 2 * J.transpose() * J + 2 * Pr.transpose() * Pr;
   qp_g.topLeftCorner(7, 1) = -2 * (a.transpose() * J + ddq_nominal.transpose() * Pr.transpose() * Pr).transpose();
