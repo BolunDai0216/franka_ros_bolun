@@ -74,4 +74,9 @@
       A controller that uses proxsuite as the QP solver.
     </description>
   </class>
+  <class name="franka_example_controllers/PDTestController" type="franka_example_controllers::PDTestController" base_class_type="controller_interface::ControllerBase">
+    <description>
+      A PD controller for testing purpose.
+    </description>
+  </class>
 </library>

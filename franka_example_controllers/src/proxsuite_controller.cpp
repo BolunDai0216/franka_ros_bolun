@@ -3,6 +3,7 @@
 #include <franka_example_controllers/pseudo_inversion.h>
 
 #include <cmath>
+#include <optional>
 
 #include <controller_interface/controller_base.h> 
 #include <hardware_interface/hardware_interface.h>
@@ -90,11 +91,6 @@ bool ProxsuiteController::init(hardware_interface::RobotHW* robot_hw,
     }
   }
 
-  // build pin_robot from urdf
-  std::string urdf_filename = "/home/bolun/bolun_ws/src/franka_ros_bolun/franka_example_controllers/fr3.urdf";
-  pin::urdf::buildModel(urdf_filename, model);
-  data = pin::Data(model);
-
   return true;
 }
 
@@ -102,20 +98,24 @@ void ProxsuiteController::starting(const ros::Time& /* time */) {
   // get intial robot state
   franka::RobotState initial_state = state_handle_->getRobotState();
 
+  // get joint angles and angular velocities
+  Eigen::Map<Eigen::Matrix<double, 7, 1>> q(initial_state.q.data());
+  Eigen::Map<Eigen::Matrix<double, 7, 1>> dq(initial_state.dq.data());
+
+  // get current end-effector position and orientation
+  Eigen::Affine3d transform(Eigen::Matrix4d::Map(initial_state.O_T_EE.data()));
+  p_start = transform.translation();
+  R_start = transform.rotation();
+
   // set movement duration
-  movement_duration = 5.0;
+  movement_duration = 10.0;
 
   // initialize controller clock
   controlller_clock = 0.0;
-
-  // get initial end-effector position and orientation
-  Eigen::Affine3d T_EE(Eigen::Matrix4d::Map(initial_state.O_T_EE.data()));
-  p_start = T_EE.translation();
-  R_start = T_EE.rotation();
   
   // set terminal end-effector position and orientation
-  p_end << 0.3, 0.3, 0.2;
-  R_end = T_EE.rotation();
+  p_end << 0.4, 0.4, 0.2;
+  R_end = transform.rotation();
 
   // compute orientation error between initial and terminal configuration
   R_error = R_end * R_start.transpose();
@@ -123,20 +123,25 @@ void ProxsuiteController::starting(const ros::Time& /* time */) {
   orientation_error_axis = AngleAxisError.axis();
   orientation_error_angle = AngleAxisError.angle();
 
-  ee_frame_id = model.getFrameId("fr3_hand_tcp");
-
-  Kp << 1000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
-        0.0, 2000.0, 0.0, 0.0, 0.0, 0.0, 
-        0.0, 0.0, 1000.0, 0.0, 0.0, 0.0, 
-        0.0, 0.0, 0.0, 2000.0, 0.0, 0.0,
-        0.0, 0.0, 0.0, 0.0, 2000.0, 0.0, 
-        0.0, 0.0, 0.0, 0.0, 0.0, 2000.0;
-  Kd << 10.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
-        0.0, 5.0, 0.0, 0.0, 0.0, 0.0, 
+  Kp << 10.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
+        0.0, 10.0, 0.0, 0.0, 0.0, 0.0, 
         0.0, 0.0, 10.0, 0.0, 0.0, 0.0, 
         0.0, 0.0, 0.0, 10.0, 0.0, 0.0,
         0.0, 0.0, 0.0, 0.0, 10.0, 0.0, 
         0.0, 0.0, 0.0, 0.0, 0.0, 10.0;
+
+  Kd << 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
+        0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 
+        0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 
+        0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+        0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 
+        0.0, 0.0, 0.0, 0.0, 0.0, 1.0;
+
+  // initialize QP parameters
+  qp_H = Eigen::MatrixXd::Zero(14, 14);
+  qp_g = Eigen::MatrixXd::Zero(14, 1);
+
+  q_nominal << q[0], q[1], q[2], q[3], q[4], q[5], q[6];
 }
 
 void ProxsuiteController::update(const ros::Time& /*time*/, const ros::Duration& period) {
@@ -148,22 +153,17 @@ void ProxsuiteController::update(const ros::Time& /*time*/, const ros::Duration&
   Eigen::Map<Eigen::Matrix<double, 7, 1>> q(robot_state.q.data());
   Eigen::Map<Eigen::Matrix<double, 7, 1>> dq(robot_state.dq.data());
 
+  // get end-effector jacobian
+  std::array<double, 42> jacobian_array = model_handle_->getZeroJacobian(franka::Frame::kEndEffector);
+  Eigen::Map<Eigen::Matrix<double, 6, 7>> jacobian(jacobian_array.data());
+
+  // convert to Eigen
+  Eigen::Map<Eigen::Matrix<double, 7, 1>> tau_J_d(robot_state.tau_J_d.data());
+
   // get current end-effector position and orientation
-  Eigen::Affine3d T_EE_current(Eigen::Matrix4d::Map(robot_state.O_T_EE.data()));
-  p_current = T_EE_current.translation();
-  R_current = T_EE_current.rotation();
-
-  // update pinocchio robot model
-  pin::forwardKinematics(model, data, q, dq);
-  pin::computeJointJacobians(model, data, q); 
-  pin::updateFramePlacements(model, data); 
-
-  // get Jacobian matrix
-  pin::getFrameJacobian(model, data, ee_frame_id, pin::LOCAL_WORLD_ALIGNED, J);
-
-  // get time derivative of positional Jacobian
-  pin::computeJointJacobiansTimeVariation(model, data, q, dq);
-  pin::getFrameJacobianTimeVariation(model, data, ee_frame_id, pin::LOCAL_WORLD_ALIGNED, dJ);
+  Eigen::Affine3d current_transform(Eigen::Matrix4d::Map(robot_state.O_T_EE.data()));
+  p_current = current_transform.translation();
+  R_current = current_transform.rotation();
 
   // get α, dα, ddα
   alpha_func(controlller_clock);
@@ -189,37 +189,18 @@ void ProxsuiteController::update(const ros::Time& /*time*/, const ros::Duration&
   Eigen::Matrix<double, 3, 1> p_error = p_target - p_current;
 
   // get errors and targets for torque computation
-  Eigen::Matrix<double, 6, 1> P_err; 
-  Eigen::Matrix<double, 6, 1> dP_target;
-  Eigen::Matrix<double, 6, 1> ddP_target;
-
   P_err << p_error, rotvec_err;
-  dP_target << v_target, w_target;
-  ddP_target << a_target, dw_target; 
 
   // compute pseudo-inverse of Jacobian
-  Eigen::MatrixXd pJ_EE;
   pseudoInverse(J, pJ_EE);
 
-  // get estimated dP
-  auto dP = J * dq;
-  // auto a = ddP_target + 1000 * P_err + 10 * (dP_target - dP) - dJ * dq;
-  auto a = ddP_target + Kp * P_err + Kd * (dP_target - dP) - dJ * dq;
-  auto ddq_desired = pJ_EE * a;
+  get_qp_parameters(q, dq);
+  solve_qp();
 
-  // get mass matrix
-  std::array<double, 49> mass_array = model_handle_->getMass();
-  Eigen::Map<Eigen::Matrix<double, 7, 7>> M(mass_array.data());
+  torques = 10 * (q_desired - q) - 0.1 * dq;
 
-  // get Coriolis and centrifugal terms
-  std::array<double, 7> coriolis_array = model_handle_->getCoriolis();
-  Eigen::Map<Eigen::Matrix<double, 7, 1>> coriolis(coriolis_array.data());
-
-  // inverse dynamics controller
-  torques = M * ddq_desired + coriolis;
-
-  // joint space PD controller
-  // torques = 300 * (pJ_EE * P_err) + 10 * (pJ_EE * dP_target - dq);
+  // Saturate torque rate to avoid discontinuities
+  torques << saturateTorqueRate(torques, tau_J_d);
 
   // set torque
   for (size_t i = 0; i < 7; ++i) {
@@ -227,6 +208,37 @@ void ProxsuiteController::update(const ros::Time& /*time*/, const ros::Duration&
   }
 
   ROS_INFO_STREAM("ee_pos: " << p_current);
+
+  if (controlller_clock >= (movement_duration + 2.0)) {
+    controlller_clock = 0.0;
+
+    // get current end-effector position and orientation
+    Eigen::Affine3d transform(Eigen::Matrix4d::Map(robot_state.O_T_EE.data()));
+    p_start = transform.translation();
+    R_start = transform.rotation();
+
+    // set terminal end-effector position and orientation
+    p_end << 0.4, -p_end[1], 0.2;
+    R_end = transform.rotation();
+
+    // compute orientation error between initial and terminal configuration
+    R_error = R_end * R_start.transpose();
+    Eigen::AngleAxisd AngleAxisError(R_error);
+    orientation_error_axis = AngleAxisError.axis();
+    orientation_error_angle = AngleAxisError.angle();
+  }
+}
+
+Eigen::Matrix<double, 7, 1> ProxsuiteController::saturateTorqueRate(
+    const Eigen::Matrix<double, 7, 1>& tau_d_calculated,
+    const Eigen::Matrix<double, 7, 1>& tau_J_d) {  // NOLINT (readability-identifier-naming)
+  Eigen::Matrix<double, 7, 1> tau_d_saturated{};
+  for (size_t i = 0; i < 7; i++) {
+    double difference = tau_d_calculated[i] - tau_J_d[i];
+    tau_d_saturated[i] =
+        tau_J_d[i] + std::max(std::min(difference, delta_tau_max_), -delta_tau_max_);
+  }
+  return tau_d_saturated;
 }
 
 void ProxsuiteController::alpha_func(const double& t) {
@@ -247,6 +259,31 @@ void ProxsuiteController::alpha_func(const double& t) {
     dalpha = 0.0;
     ddalpha = 0.0;
   }
+}
+
+void ProxsuiteController::solve_qp(void) {
+  proxsuite::proxqp::isize dim = 7;
+  proxsuite::proxqp::isize n_eq = 0;
+  proxsuite::proxqp::isize n_in = 0;
+  proxsuite::proxqp::dense::QP<double> qp(dim, n_eq, n_in); // create the QP object
+
+  qp.init(qp_H, qp_g, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
+  qp.solve();
+  q_desired << qp.results.x[0], 
+               qp.results.x[1], 
+               qp.results.x[2], 
+               qp.results.x[3],
+               qp.results.x[4],
+               qp.results.x[5],
+               qp.results.x[6];
+}
+
+void ProxsuiteController::get_qp_parameters(const Eigen::Matrix<double, 7, 1>& q, 
+                                            const Eigen::Matrix<double, 7, 1>& dq) {
+  auto Pr = Eigen::MatrixXd::Identity(7, 7) - pJ_EE * J;
+
+  qp_H = 2 * J.transpose() * J + 2 * Pr.transpose() * Pr;
+  qp_g = -2 * (q.transpose() * J.transpose() * J + P_err.transpose() * J + q_nominal.transpose() * Pr.transpose() * Pr).transpose();
 }
 
 }  // namespace franka_example_controllers

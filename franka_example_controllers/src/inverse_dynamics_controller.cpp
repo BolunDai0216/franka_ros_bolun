@@ -136,19 +136,19 @@ void InverseDynamicsController::starting(const ros::Time& /* time */) {
   orientation_error_axis = AngleAxisError.axis();
   orientation_error_angle = AngleAxisError.angle();
 
-  Kp << 1000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
-        0.0, 2000.0, 0.0, 0.0, 0.0, 0.0, 
-        0.0, 0.0, 1000.0, 0.0, 0.0, 0.0, 
-        0.0, 0.0, 0.0, 2000.0, 0.0, 0.0,
-        0.0, 0.0, 0.0, 0.0, 2000.0, 0.0, 
-        0.0, 0.0, 0.0, 0.0, 0.0, 2000.0;
-
-  Kd << 10.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
-        0.0, 5.0, 0.0, 0.0, 0.0, 0.0, 
+  Kp << 10.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
+        0.0, 10.0, 0.0, 0.0, 0.0, 0.0, 
         0.0, 0.0, 10.0, 0.0, 0.0, 0.0, 
         0.0, 0.0, 0.0, 10.0, 0.0, 0.0,
         0.0, 0.0, 0.0, 0.0, 10.0, 0.0, 
         0.0, 0.0, 0.0, 0.0, 0.0, 10.0;
+
+  Kd << 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
+        0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 
+        0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 
+        0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+        0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 
+        0.0, 0.0, 0.0, 0.0, 0.0, 1.0;
 
   // initialize QP parameters
   qp_H = Eigen::MatrixXd::Zero(14, 14);
@@ -222,7 +222,7 @@ void InverseDynamicsController::update(const ros::Time& /*time*/, const ros::Dur
 
   // get estimated dP
   auto dP = J * dq;
-  auto a = ddP_target + Kp * P_err + Kd * (dP_target - dP) - dJ * dq;
+  auto a = ddP_target + 50 * Kp * P_err + 20 * Kd * (dP_target - dP) - dJ * dq;
   auto ddq_desired = pJ_EE * a;
 
   // get mass matrix
@@ -246,23 +246,23 @@ void InverseDynamicsController::update(const ros::Time& /*time*/, const ros::Dur
 
   ROS_INFO_STREAM("ee_pos: " << p_current);
 
-  // if (controlller_clock >= (movement_duration + 2.0)) {
-  //   controlller_clock = 0.0;
+  if (controlller_clock >= (movement_duration + 2.0)) {
+    controlller_clock = 0.0;
 
-  //   // get current end-effector position and orientation
-  //   p_start = data.oMf[ee_frame_id].translation();
-  //   R_start = data.oMf[ee_frame_id].rotation();
+    // get current end-effector position and orientation
+    p_start = data.oMf[ee_frame_id].translation();
+    R_start = data.oMf[ee_frame_id].rotation();
 
-  //   // set terminal end-effector position and orientation
-  //   p_end[1] = -p_end[1];
-  //   R_end = data.oMf[ee_frame_id].rotation();
+    // set terminal end-effector position and orientation
+    p_end << 0.4, -p_end[1], 0.2;
+    R_end = data.oMf[ee_frame_id].rotation();
 
-  //   // compute orientation error between initial and terminal configuration
-  //   R_error = R_end * R_start.transpose();
-  //   Eigen::AngleAxisd AngleAxisError(R_error);
-  //   orientation_error_axis = AngleAxisError.axis();
-  //   orientation_error_angle = AngleAxisError.angle();
-  // }
+    // compute orientation error between initial and terminal configuration
+    R_error = R_end * R_start.transpose();
+    Eigen::AngleAxisd AngleAxisError(R_error);
+    orientation_error_axis = AngleAxisError.axis();
+    orientation_error_angle = AngleAxisError.angle();
+  }
 }
 
 Eigen::Matrix<double, 7, 1> InverseDynamicsController::saturateTorqueRate(
