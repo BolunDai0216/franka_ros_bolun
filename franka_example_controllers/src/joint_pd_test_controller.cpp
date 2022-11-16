@@ -160,7 +160,7 @@ void JointPDTestController::update(const ros::Time& /*time*/, const ros::Duratio
     joint_handles_[i].setCommand(torques[i]);
   }
 
-  ROS_INFO_STREAM("EE Position: " << p_measured.transpose());
+  ROS_INFO_STREAM("Positional Error: " << P_error.transpose());
 }
 
 Eigen::Matrix<double, 7, 1> JointPDTestController::saturateTorqueRate(
