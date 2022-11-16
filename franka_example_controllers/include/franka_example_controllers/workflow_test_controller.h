@@ -15,7 +15,7 @@
 #include <pinocchio/multibody/model.hpp>
 #include <pinocchio/algorithm/model.hpp>
 
-#include <proxsuite/proxqp/dense/dense.hpp>
+// #include <proxsuite/proxqp/dense/dense.hpp>
 
 #include <array>
 #include <string>

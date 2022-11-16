@@ -27,7 +27,7 @@ find_package(catkin REQUIRED COMPONENTS
 )
 
 find_package(Eigen3 REQUIRED)
-find_package(proxsuite REQUIRED)
+# find_package(proxsuite REQUIRED)
 find_package(pinocchio REQUIRED)
 find_package(Franka 0.9.0 QUIET)
 if(NOT Franka_FOUND)
@@ -99,7 +99,7 @@ add_dependencies(franka_example_controllers
 
 target_link_libraries(franka_example_controllers PUBLIC
   pinocchio::pinocchio
-  proxsuite::proxsuite
+  # proxsuite::proxsuite
   ${Franka_LIBRARIES}
   ${catkin_LIBRARIES}
 )

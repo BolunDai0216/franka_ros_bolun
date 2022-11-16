@@ -91,7 +91,7 @@ bool InverseDynamicsController::init(hardware_interface::RobotHW* robot_hw,
   }
 
   // build pin_robot from urdf
-  std::string urdf_filename = "/home/bolun/bolun_ws/src/franka_ros_bolun/franka_example_controllers/fr3.urdf";
+  std::string urdf_filename = "/home/parallels/bolun_ws/src/franka_ros_bolun/franka_example_controllers/fr3.urdf";
   pin::urdf::buildModel(urdf_filename, model);
   data = pin::Data(model);
 
@@ -190,7 +190,7 @@ void InverseDynamicsController::update(const ros::Time& /*time*/, const ros::Dur
 
   // get estimated dP
   auto dP = J * dq;
-  auto a = ddP_target + 5 * P_err + 0.1 * (dP_target - dP) - dJ * dq;
+  auto a = ddP_target + 100 * P_err + 10 * (dP_target - dP) - dJ * dq;
   auto ddq_desired = pJ_EE * a;
 
   // get mass matrix
@@ -201,8 +201,8 @@ void InverseDynamicsController::update(const ros::Time& /*time*/, const ros::Dur
   std::array<double, 7> coriolis_array = model_handle_->getCoriolis();
   Eigen::Map<Eigen::Matrix<double, 7, 1>> coriolis(coriolis_array.data());
 
-  // torques = M * (ddq_desired - 0.1 * dq) + coriolis;
-  torques = 300 * (pJ_EE * P_err) + 10 * (pJ_EE * dP_target - dq);
+  torques = M * (ddq_desired - 10 * dq) + coriolis;
+  // torques = 300 * (pJ_EE * P_err) + 10 * (pJ_EE * dP_target - dq);
 
   // set torque
   for (size_t i = 0; i < 7; ++i) {
