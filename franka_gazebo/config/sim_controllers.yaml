@@ -185,3 +185,18 @@ joint_pd_test_pin_controller:
     p_gain: 500.0
     d_gain: 10.0
     dq_gain: 1.0
+
+inverse_dynamics_test_controller:
+    type: franka_example_controllers/InverseDynamicsTestController
+    arm_id: $(arg arm_id)
+    joint_names:
+        - $(arg arm_id)_joint1
+        - $(arg arm_id)_joint2
+        - $(arg arm_id)_joint3
+        - $(arg arm_id)_joint4
+        - $(arg arm_id)_joint5
+        - $(arg arm_id)_joint6
+        - $(arg arm_id)_joint7
+    p_gain: 500.0
+    d_gain: 10.0
+    dq_gain: 1.0
