@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.4)
 project(franka_example_controllers)
 
 set(CMAKE_BUILD_TYPE Release)
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_INSTALL_PREFIX $ENV{CONDA_PREFIX})
 
@@ -87,6 +87,8 @@ add_library(franka_example_controllers
   src/pick_n_place_controller.cpp
   src/workflow_test_controller.cpp
   src/inverse_dynamics_controller.cpp
+  src/proxsuite_controller.cpp
+  src/pd_test_controller.cpp
 )
 
 add_dependencies(franka_example_controllers

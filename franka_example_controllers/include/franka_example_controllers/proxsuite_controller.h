@@ -36,9 +36,9 @@
 
 namespace franka_example_controllers {
 
-class InverseDynamicsController : public controller_interface::MultiInterfaceController<franka_hw::FrankaModelInterface, 
-                                                                           hardware_interface::EffortJointInterface, 
-                                                                           franka_hw::FrankaStateInterface> {
+class ProxsuiteController : public controller_interface::MultiInterfaceController<franka_hw::FrankaModelInterface, 
+                                                                                  hardware_interface::EffortJointInterface, 
+                                                                                  franka_hw::FrankaStateInterface> {
  public:
   bool init(hardware_interface::RobotHW* robot_hardware, ros::NodeHandle& node_handle) override;
   void starting(const ros::Time&) override;
@@ -46,10 +46,7 @@ class InverseDynamicsController : public controller_interface::MultiInterfaceCon
   void alpha_func(const double& t);
   void solve_qp(void);
   void get_qp_parameters(const Eigen::Matrix<double, 7, 1>& q, 
-                         const Eigen::Matrix<double, 7, 1>& dq, 
-                         const Eigen::Matrix<double, 6, 1>& a, 
-                         const Eigen::Matrix<double, 7, 7>& M, 
-                         const Eigen::Matrix<double, 7, 1>& coriolis);
+                         const Eigen::Matrix<double, 7, 1>& dq);
 
  private:
   // Saturation
@@ -94,6 +91,11 @@ class InverseDynamicsController : public controller_interface::MultiInterfaceCon
   Eigen::Matrix<double, 3, 1> p_end;
   Eigen::Matrix<double, 3, 3> R_end;
 
+  // errors and targets computed at each time step
+  Eigen::Matrix<double, 6, 1> P_err; 
+  Eigen::Matrix<double, 6, 1> dP_target;
+  Eigen::Matrix<double, 6, 1> ddP_target;
+
   // pseudo-inverse
   Eigen::MatrixXd pJ_EE;
 
@@ -118,6 +120,7 @@ class InverseDynamicsController : public controller_interface::MultiInterfaceCon
   Eigen::Matrix<double, 6, 7> dJ;
 
   // applied torque
+  Eigen::Matrix<double, 7, 1> q_desired;
   Eigen::Matrix<double, 7, 1> torques;
 
   // define Kp and Kd
@@ -131,10 +134,8 @@ class InverseDynamicsController : public controller_interface::MultiInterfaceCon
   bool qp_initialized;
 
   // define QP parameters
-  Eigen::Matrix<double, 14, 14> qp_H;
-  Eigen::Matrix<double, 14, 1> qp_g;
-  Eigen::Matrix<double, 7, 14> qp_A;
-  Eigen::Matrix<double, 7, 1> qp_b;
+  Eigen::Matrix<double, 7, 7> qp_H;
+  Eigen::Matrix<double, 7, 1> qp_g;
   Eigen::Matrix<double, 7, 1> q_nominal;
 };
 

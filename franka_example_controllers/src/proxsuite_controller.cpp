@@ -1,4 +1,4 @@
-#include <franka_example_controllers/inverse_dynamics_controller.h>
+#include <franka_example_controllers/proxsuite_controller.h>
 #include <franka/robot_state.h>
 #include <franka_example_controllers/pseudo_inversion.h>
 
@@ -15,22 +15,22 @@ namespace pin = pinocchio;
 
 namespace franka_example_controllers {
 
-bool InverseDynamicsController::init(hardware_interface::RobotHW* robot_hw,
+bool ProxsuiteController::init(hardware_interface::RobotHW* robot_hw,
                                           ros::NodeHandle& node_handle) {
   // check if got arm_id
   std::string arm_id;
   if (!node_handle.getParam("arm_id", arm_id)) {
-    ROS_ERROR_STREAM("InverseDynamicsController: Could not read parameter arm_id");
+    ROS_ERROR_STREAM("ProxsuiteController: Could not read parameter arm_id");
     return false;
   }
   
   // check if got joint_names
   std::vector<std::string> joint_names;
   if (!node_handle.getParam("joint_names", joint_names)) {
-    ROS_ERROR("InverseDynamicsController: Could not parse joint names");
+    ROS_ERROR("ProxsuiteController: Could not parse joint names");
   }
   if (joint_names.size() != 7) {
-    ROS_ERROR_STREAM("InverseDynamicsController: Wrong number of joint names, got " << joint_names.size() << " instead of 7 names!");
+    ROS_ERROR_STREAM("ProxsuiteController: Wrong number of joint names, got " << joint_names.size() << " instead of 7 names!");
     return false;
   }
   
@@ -39,7 +39,7 @@ bool InverseDynamicsController::init(hardware_interface::RobotHW* robot_hw,
   
   if (model_interface == nullptr) {
     ROS_ERROR_STREAM(
-        "InverseDynamicsController: Error getting model interface from hardware");
+        "ProxsuiteController: Error getting model interface from hardware");
     return false;
   }
 
@@ -48,7 +48,7 @@ bool InverseDynamicsController::init(hardware_interface::RobotHW* robot_hw,
         model_interface->getHandle(arm_id + "_model"));
   } catch (hardware_interface::HardwareInterfaceException& ex) {
     ROS_ERROR_STREAM(
-        "InverseDynamicsController: Exception getting model handle from interface: "
+        "ProxsuiteController: Exception getting model handle from interface: "
         << ex.what());
     return false;
   }
@@ -58,7 +58,7 @@ bool InverseDynamicsController::init(hardware_interface::RobotHW* robot_hw,
   
   if (state_interface == nullptr) {
     ROS_ERROR_STREAM(
-        "InverseDynamicsController: Error getting state interface from hardware");
+        "ProxsuiteController: Error getting state interface from hardware");
     return false;
   }
   
@@ -67,7 +67,7 @@ bool InverseDynamicsController::init(hardware_interface::RobotHW* robot_hw,
         state_interface->getHandle(arm_id + "_robot"));
   } catch (hardware_interface::HardwareInterfaceException& ex) {
     ROS_ERROR_STREAM(
-        "InverseDynamicsController: Exception getting state handle from interface: "
+        "ProxsuiteController: Exception getting state handle from interface: "
         << ex.what());
     return false;
   }
@@ -77,7 +77,7 @@ bool InverseDynamicsController::init(hardware_interface::RobotHW* robot_hw,
   
   if (effort_joint_interface == nullptr) {
     ROS_ERROR_STREAM(
-        "InverseDynamicsController: Error getting effort joint interface from hardware");
+        "ProxsuiteController: Error getting effort joint interface from hardware");
     return false;
   }
   
@@ -86,20 +86,15 @@ bool InverseDynamicsController::init(hardware_interface::RobotHW* robot_hw,
       joint_handles_.push_back(effort_joint_interface->getHandle(joint_names[i]));
     } catch (const hardware_interface::HardwareInterfaceException& ex) {
       ROS_ERROR_STREAM(
-          "InverseDynamicsController: Exception getting joint handles: " << ex.what());
+          "ProxsuiteController: Exception getting joint handles: " << ex.what());
       return false;
     }
   }
 
-  // build pin_robot from urdf
-  std::string urdf_filename = "/home/parallels/bolun_ws/src/franka_ros_bolun/franka_example_controllers/fr3.urdf";
-  pin::urdf::buildModel(urdf_filename, model);
-  data = pin::Data(model);
-
   return true;
 }
 
-void InverseDynamicsController::starting(const ros::Time& /* time */) {
+void ProxsuiteController::starting(const ros::Time& /* time */) {
   // get intial robot state
   franka::RobotState initial_state = state_handle_->getRobotState();
 
@@ -107,18 +102,10 @@ void InverseDynamicsController::starting(const ros::Time& /* time */) {
   Eigen::Map<Eigen::Matrix<double, 7, 1>> q(initial_state.q.data());
   Eigen::Map<Eigen::Matrix<double, 7, 1>> dq(initial_state.dq.data());
 
-  // update pinocchio robot model
-  pin::forwardKinematics(model, data, q, dq);
-  pin::computeJointJacobians(model, data, q); 
-  pin::updateFramePlacements(model, data);
-  pin::computeJointJacobiansTimeVariation(model, data, q, dq); 
-
-  // define end-effector frame id in pinocchio
-  ee_frame_id = model.getFrameId("fr3_hand_tcp");
-
   // get current end-effector position and orientation
-  p_start = data.oMf[ee_frame_id].translation();
-  R_start = data.oMf[ee_frame_id].rotation();
+  Eigen::Affine3d transform(Eigen::Matrix4d::Map(initial_state.O_T_EE.data()));
+  p_start = transform.translation();
+  R_start = transform.rotation();
 
   // set movement duration
   movement_duration = 10.0;
@@ -128,7 +115,7 @@ void InverseDynamicsController::starting(const ros::Time& /* time */) {
   
   // set terminal end-effector position and orientation
   p_end << 0.4, 0.4, 0.2;
-  R_end = data.oMf[ee_frame_id].rotation();
+  R_end = transform.rotation();
 
   // compute orientation error between initial and terminal configuration
   R_error = R_end * R_start.transpose();
@@ -157,7 +144,7 @@ void InverseDynamicsController::starting(const ros::Time& /* time */) {
   q_nominal << q[0], q[1], q[2], q[3], q[4], q[5], q[6];
 }
 
-void InverseDynamicsController::update(const ros::Time& /*time*/, const ros::Duration& period) {
+void ProxsuiteController::update(const ros::Time& /*time*/, const ros::Duration& period) {
   // update controller clock
   controlller_clock += period.toSec();
 
@@ -166,24 +153,17 @@ void InverseDynamicsController::update(const ros::Time& /*time*/, const ros::Dur
   Eigen::Map<Eigen::Matrix<double, 7, 1>> q(robot_state.q.data());
   Eigen::Map<Eigen::Matrix<double, 7, 1>> dq(robot_state.dq.data());
 
+  // get end-effector jacobian
+  std::array<double, 42> jacobian_array = model_handle_->getZeroJacobian(franka::Frame::kEndEffector);
+  Eigen::Map<Eigen::Matrix<double, 6, 7>> jacobian(jacobian_array.data());
+
   // convert to Eigen
   Eigen::Map<Eigen::Matrix<double, 7, 1>> tau_J_d(robot_state.tau_J_d.data());
 
-  // update pinocchio robot model
-  pin::forwardKinematics(model, data, q, dq);
-  pin::computeJointJacobians(model, data, q); 
-  pin::updateFramePlacements(model, data);
-  pin::computeJointJacobiansTimeVariation(model, data, q, dq); 
-
   // get current end-effector position and orientation
-  p_current = data.oMf[ee_frame_id].translation();
-  R_current = data.oMf[ee_frame_id].rotation();
-
-  // get Jacobian matrix
-  pin::getFrameJacobian(model, data, ee_frame_id, pin::LOCAL_WORLD_ALIGNED, J);
-
-  // get time derivative of positional Jacobian
-  pin::getFrameJacobianTimeVariation(model, data, ee_frame_id, pin::LOCAL_WORLD_ALIGNED, dJ);
+  Eigen::Affine3d current_transform(Eigen::Matrix4d::Map(robot_state.O_T_EE.data()));
+  p_current = current_transform.translation();
+  R_current = current_transform.rotation();
 
   // get α, dα, ddα
   alpha_func(controlller_clock);
@@ -209,32 +189,15 @@ void InverseDynamicsController::update(const ros::Time& /*time*/, const ros::Dur
   Eigen::Matrix<double, 3, 1> p_error = p_target - p_current;
 
   // get errors and targets for torque computation
-  Eigen::Matrix<double, 6, 1> P_err; 
-  Eigen::Matrix<double, 6, 1> dP_target;
-  Eigen::Matrix<double, 6, 1> ddP_target;
-
   P_err << p_error, rotvec_err;
-  dP_target << v_target, w_target;
-  ddP_target << a_target, dw_target; 
 
   // compute pseudo-inverse of Jacobian
   pseudoInverse(J, pJ_EE);
 
-  // get estimated dP
-  auto dP = J * dq;
-  auto a = ddP_target + 50 * Kp * P_err + 20 * Kd * (dP_target - dP) - dJ * dq;
-  auto ddq_desired = pJ_EE * a;
-
-  // get mass matrix
-  std::array<double, 49> mass_array = model_handle_->getMass();
-  Eigen::Map<Eigen::Matrix<double, 7, 7>> M(mass_array.data());
-
-  // get Coriolis and centrifugal terms
-  std::array<double, 7> coriolis_array = model_handle_->getCoriolis();
-  Eigen::Map<Eigen::Matrix<double, 7, 1>> coriolis(coriolis_array.data());
-
-  get_qp_parameters(q, dq, a, M, coriolis);
+  get_qp_parameters(q, dq);
   solve_qp();
+
+  torques = 10 * (q_desired - q) - 0.1 * dq;
 
   // Saturate torque rate to avoid discontinuities
   torques << saturateTorqueRate(torques, tau_J_d);
@@ -250,12 +213,13 @@ void InverseDynamicsController::update(const ros::Time& /*time*/, const ros::Dur
     controlller_clock = 0.0;
 
     // get current end-effector position and orientation
-    p_start = data.oMf[ee_frame_id].translation();
-    R_start = data.oMf[ee_frame_id].rotation();
+    Eigen::Affine3d transform(Eigen::Matrix4d::Map(robot_state.O_T_EE.data()));
+    p_start = transform.translation();
+    R_start = transform.rotation();
 
     // set terminal end-effector position and orientation
     p_end << 0.4, -p_end[1], 0.2;
-    R_end = data.oMf[ee_frame_id].rotation();
+    R_end = transform.rotation();
 
     // compute orientation error between initial and terminal configuration
     R_error = R_end * R_start.transpose();
@@ -265,7 +229,7 @@ void InverseDynamicsController::update(const ros::Time& /*time*/, const ros::Dur
   }
 }
 
-Eigen::Matrix<double, 7, 1> InverseDynamicsController::saturateTorqueRate(
+Eigen::Matrix<double, 7, 1> ProxsuiteController::saturateTorqueRate(
     const Eigen::Matrix<double, 7, 1>& tau_d_calculated,
     const Eigen::Matrix<double, 7, 1>& tau_J_d) {  // NOLINT (readability-identifier-naming)
   Eigen::Matrix<double, 7, 1> tau_d_saturated{};
@@ -277,7 +241,7 @@ Eigen::Matrix<double, 7, 1> InverseDynamicsController::saturateTorqueRate(
   return tau_d_saturated;
 }
 
-void InverseDynamicsController::alpha_func(const double& t) {
+void ProxsuiteController::alpha_func(const double& t) {
   if (t <= movement_duration){
     double sin_ = std::sin(M_PI * t / movement_duration);
     double cos_ = std::cos(M_PI * t / movement_duration);
@@ -297,37 +261,31 @@ void InverseDynamicsController::alpha_func(const double& t) {
   }
 }
 
-void InverseDynamicsController::solve_qp(void) {
-  proxsuite::proxqp::isize dim = 14;
-  proxsuite::proxqp::isize n_eq = 7;
+void ProxsuiteController::solve_qp(void) {
+  proxsuite::proxqp::isize dim = 7;
+  proxsuite::proxqp::isize n_eq = 0;
   proxsuite::proxqp::isize n_in = 0;
   proxsuite::proxqp::dense::QP<double> qp(dim, n_eq, n_in); // create the QP object
 
-  qp.init(qp_H, qp_g, qp_A, qp_b, std::nullopt, std::nullopt, std::nullopt);
+  qp.init(qp_H, qp_g, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
   qp.solve();
-  torques << qp.results.x[7], 
-             qp.results.x[8], 
-             qp.results.x[9], 
-             qp.results.x[10],
-             qp.results.x[11],
-             qp.results.x[12],
-             qp.results.x[13];
+  q_desired << qp.results.x[0], 
+               qp.results.x[1], 
+               qp.results.x[2], 
+               qp.results.x[3],
+               qp.results.x[4],
+               qp.results.x[5],
+               qp.results.x[6];
 }
 
-void InverseDynamicsController::get_qp_parameters(const Eigen::Matrix<double, 7, 1>& q, 
-                                                  const Eigen::Matrix<double, 7, 1>& dq, 
-                                                  const Eigen::Matrix<double, 6, 1>& a, 
-                                                  const Eigen::Matrix<double, 7, 7>& M, 
-                                                  const Eigen::Matrix<double, 7, 1>& coriolis) {
+void ProxsuiteController::get_qp_parameters(const Eigen::Matrix<double, 7, 1>& q, 
+                                            const Eigen::Matrix<double, 7, 1>& dq) {
   auto Pr = Eigen::MatrixXd::Identity(7, 7) - pJ_EE * J;
-  auto ddq_nominal = 10.0 * (q_nominal - q) - 1.0 * dq;
 
-  qp_H.topLeftCorner(7, 7) = 2 * J.transpose() * J + 2 * Pr.transpose() * Pr;
-  qp_g.topLeftCorner(7, 1) = -2 * (a.transpose() * J + ddq_nominal.transpose() * Pr.transpose() * Pr).transpose();
-  qp_A << M, -Eigen::MatrixXd::Identity(7, 7);
-  qp_b << -coriolis;
+  qp_H = 2 * J.transpose() * J + 2 * Pr.transpose() * Pr;
+  qp_g = -2 * (q.transpose() * J.transpose() * J + P_err.transpose() * J + q_nominal.transpose() * Pr.transpose() * Pr).transpose();
 }
 
 }  // namespace franka_example_controllers
 
-PLUGINLIB_EXPORT_CLASS(franka_example_controllers::InverseDynamicsController, controller_interface::ControllerBase)
+PLUGINLIB_EXPORT_CLASS(franka_example_controllers::ProxsuiteController, controller_interface::ControllerBase)
