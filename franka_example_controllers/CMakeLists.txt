@@ -90,6 +90,7 @@ add_library(franka_example_controllers
   src/proxsuite_controller.cpp
   src/pd_test_controller.cpp
   src/joint_pd_test_controller.cpp
+  src/joint_pd_test_pin_controller.cpp
 )
 
 add_dependencies(franka_example_controllers

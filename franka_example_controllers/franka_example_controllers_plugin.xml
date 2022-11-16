@@ -84,4 +84,9 @@
       A joint-space PD controller for testing purpose.
     </description>
   </class>
+  <class name="franka_example_controllers/JointPDTestPinController" type="franka_example_controllers::JointPDTestPinController" base_class_type="controller_interface::ControllerBase">
+    <description>
+      A joint-space PD controller for testing purpose using Pinocchio.
+    </description>
+  </class>
 </library>
