@@ -27,7 +27,7 @@ find_package(catkin REQUIRED COMPONENTS
 )
 
 find_package(Eigen3 REQUIRED)
-find_package(proxsuite REQUIRED)
+# find_package(proxsuite REQUIRED)
 find_package(pinocchio REQUIRED)
 find_package(Franka 0.9.0 QUIET)
 if(NOT Franka_FOUND)
@@ -86,11 +86,12 @@ add_library(franka_example_controllers
   src/joint_wall.cpp
   src/pick_n_place_controller.cpp
   src/workflow_test_controller.cpp
-  src/inverse_dynamics_controller.cpp
-  src/proxsuite_controller.cpp
+  # src/inverse_dynamics_controller.cpp
+  # src/proxsuite_controller.cpp
   src/pd_test_controller.cpp
   src/joint_pd_test_controller.cpp
   src/joint_pd_test_pin_controller.cpp
+  src/inverse_dynamics_test_controller.cpp
 )
 
 add_dependencies(franka_example_controllers
@@ -103,7 +104,7 @@ add_dependencies(franka_example_controllers
 
 target_link_libraries(franka_example_controllers PUBLIC
   pinocchio::pinocchio
-  proxsuite::proxsuite
+  # proxsuite::proxsuite
   ${Franka_LIBRARIES}
   ${catkin_LIBRARIES}
 )

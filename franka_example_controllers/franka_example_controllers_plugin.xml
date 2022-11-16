@@ -89,4 +89,9 @@
       A joint-space PD controller for testing purpose using Pinocchio.
     </description>
   </class>
+  <class name="franka_example_controllers/InverseDynamicsTestController" type="franka_example_controllers::InverseDynamicsTestController" base_class_type="controller_interface::ControllerBase">
+    <description>
+      An inverse dynamics controller for testing purpose using Pinocchio.
+    </description>
+  </class>
 </library>
