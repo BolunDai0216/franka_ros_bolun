@@ -42,7 +42,11 @@ class PDTestController : public controller_interface::MultiInterfaceController<f
 
   const double delta_tau_max_{1.0};
   Eigen::Matrix<double, 7, 1> q_target;
+  Eigen::Matrix<double, 7, 1> dq_target;
+  Eigen::Matrix<double, 7, 1> ddq_desired;
   Eigen::Matrix<double, 7, 1> torques;
+  
+  double init_q_target;
 };
 
 }  // namespace franka_example_controllers

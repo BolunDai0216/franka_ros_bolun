@@ -95,12 +95,19 @@ bool PDTestController::init(hardware_interface::RobotHW* robot_hw,
 void PDTestController::starting(const ros::Time& /* time */) {
   // get intial robot state
   franka::RobotState initial_state = state_handle_->getRobotState();
+  Eigen::Map<Eigen::Matrix<double, 7, 1>> q_init(initial_state.q.data());
   
   // initialize clock
   controlller_clock = 0.0;
+
+  init_q_target = q_init[1];
   
   // set target joint configuration
-  q_target << 0.0, -0.785398163, 0.0, -2.35619449, 0.0, 1.57079632679, 0.78539816339;
+  q_target << q_init[0], q_init[1], q_init[2], q_init[3], q_init[4], q_init[5], q_init[6];
+  dq_target << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0;
+  ddq_desired << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0;
+
+  ROS_INFO_STREAM("joint angle: " << q_init);
 }
 
 void PDTestController::update(const ros::Time& /*time*/, const ros::Duration& period) {
@@ -113,8 +120,21 @@ void PDTestController::update(const ros::Time& /*time*/, const ros::Duration& pe
   Eigen::Map<Eigen::Matrix<double, 7, 1>> dq(robot_state.dq.data());
   Eigen::Map<Eigen::Matrix<double, 7, 1>> tau_J_d(robot_state.tau_J_d.data());
 
-  q_target[0] = std::sin(M_PI * controlller_clock / 5) * 0.78539816339;
-  torques = 500.0 * (q_target - q) - 50.0 * dq;
+  double r = 3.0;
+
+  q_target[1] = std::sin(M_PI * controlller_clock / r) * 0.2 - (M_PI / 4);
+  dq_target[1] = (M_PI / r) * std::cos(M_PI * controlller_clock / r) * 0.2;
+  ddq_desired[1] = -(M_PI * M_PI / (r * r)) * std::sin(M_PI * controlller_clock / r) * 0.2;
+
+  // get mass matrix
+  std::array<double, 49> mass_array = model_handle_->getMass();
+  Eigen::Map<Eigen::Matrix<double, 7, 7>> M(mass_array.data());
+
+  // get Coriolis and centrifugal terms
+  std::array<double, 7> coriolis_array = model_handle_->getCoriolis();
+  Eigen::Map<Eigen::Matrix<double, 7, 1>> coriolis(coriolis_array.data());
+
+  torques = M * (ddq_desired + 500 * (q_target - q) + 50 * (dq_target - dq)) + coriolis;
 
   // Saturate torque rate to avoid discontinuities
   torques << saturateTorqueRate(torques, tau_J_d);
@@ -123,6 +143,8 @@ void PDTestController::update(const ros::Time& /*time*/, const ros::Duration& pe
   for (size_t i = 0; i < 7; ++i) {
     joint_handles_[i].setCommand(torques[i]);
   }
+
+  // ROS_INFO_STREAM("joint angle: " << std::abs(q[1] - q_target[1]));
 }
 
 Eigen::Matrix<double, 7, 1> PDTestController::saturateTorqueRate(
