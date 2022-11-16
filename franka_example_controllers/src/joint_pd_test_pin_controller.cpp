@@ -91,6 +91,20 @@ bool JointPDTestPinController::init(hardware_interface::RobotHW* robot_hw,
     }
   }
 
+  if (!node_handle.getParam("k_gains", k_gains_) || k_gains_.size() != 7) {
+    ROS_ERROR(
+        "JointPDTestController:  Invalid or no k_gain parameters provided, aborting "
+        "controller init!");
+    return false;
+  }
+
+  if (!node_handle.getParam("d_gains", d_gains_) || d_gains_.size() != 7) {
+    ROS_ERROR(
+        "JointPDTestController:  Invalid or no d_gain parameters provided, aborting "
+        "controller init!");
+    return false;
+  }
+
   read_gains(node_handle);
 
   // build pin_robot from urdf
@@ -119,6 +133,13 @@ void JointPDTestPinController::starting(const ros::Time& /* time */) {
   p_target = data.oMf[ee_frame_id].translation();
   R_target = data.oMf[ee_frame_id].rotation();
   dP_target << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0;
+
+  // get Kp and Kd gains
+  Eigen::Map<Eigen::Matrix<double, 7, 1>> k_gains_array(k_gains_.data());
+  Eigen::Map<Eigen::Matrix<double, 7, 1>> d_gains_array(d_gains_.data());
+
+  Kp = k_gains_array.array().matrix().asDiagonal();
+  Kd = d_gains_array.array().matrix().asDiagonal();
   
   // initialize clock
   controlller_clock = 0.0;
@@ -144,31 +165,46 @@ void JointPDTestPinController::update(const ros::Time& /*time*/, const ros::Dura
   R_measured = data.oMf[ee_frame_id].rotation();
 
   // get end-effector jacobian
+  std::array<double, 42> jacobian_array = model_handle_->getZeroJacobian(franka::Frame::kEndEffector);
+  Eigen::Map<Eigen::Matrix<double, 6, 7>> _jacobian(jacobian_array.data());
+
+  // get end-effector jacobian
   pin::getFrameJacobian(model, data, ee_frame_id, pin::LOCAL_WORLD_ALIGNED, jacobian);
 
   // compute orientation error with targets
   Eigen::Matrix<double, 3, 3> R_error = R_target * R_measured.transpose();
   Eigen::AngleAxisd AngleAxisErr(R_error);
   Eigen::Vector3d rotvec_err = AngleAxisErr.axis() * AngleAxisErr.angle();
+  
+  double _T = 3;
+  double _A = 0.3;
 
   // compute new p_target along the y-axis
-  p_target[1] = std::sin(M_PI * controlller_clock / 5) * 0.2;
+  p_target[1] = std::sin(M_PI * controlller_clock / _T) * _A;
 
   // compute new dP_target along the y-axis
-  dP_target[1] = (M_PI / 5) * std::cos(M_PI * controlller_clock / 5) * 0.2;
+  dP_target[1] = (M_PI / _T) * std::cos(M_PI * controlller_clock / _T) * _A;
 
   // compute positional error
   Eigen::Matrix<double, 6, 1> P_error;
   P_error << p_target - p_measured, rotvec_err;
 
   // compute pseudo-inverse of Jacobian
-  pseudoInverse(jacobian, pinv_jacobian);
+  pseudoInverse(_jacobian, pinv_jacobian);
 
   // compute joint target
   delta_q_target = pinv_jacobian * P_error;
 
   // compute joint torque
-  auto ddq_cmd = p_gain * delta_q_target + d_gain * (pinv_jacobian * dP_target - dq);
+  auto ddq_cmd = Kp * delta_q_target + Kd * (pinv_jacobian * dP_target - dq);
+
+  pin::crba(model, data, q);
+  pin::nonLinearEffects(model, data, q, dq);
+  pin::computeGeneralizedGravity(model, data, q);
+  data.M.triangularView<Eigen::StrictlyLower>() = data.M.transpose().triangularView<Eigen::StrictlyLower>();
+  
+  ROS_INFO_STREAM("M: \n" << data.M);
+  ROS_INFO_STREAM("C: \n" << data.nle - data.g);
 
   // get mass matrix
   std::array<double, 49> mass_array = model_handle_->getMass();
@@ -178,7 +214,8 @@ void JointPDTestPinController::update(const ros::Time& /*time*/, const ros::Dura
   std::array<double, 7> coriolis_array = model_handle_->getCoriolis();
   Eigen::Map<Eigen::Matrix<double, 7, 1>> coriolis(coriolis_array.data());
 
-  torques = M * ddq_cmd + coriolis;
+  torques = data.M * ddq_cmd + (data.nle - data.g);
+  // torques = ddq_cmd;
 
   // Saturate torque rate to avoid discontinuities
   torques << saturateTorqueRate(torques, tau_J_d);
@@ -188,7 +225,21 @@ void JointPDTestPinController::update(const ros::Time& /*time*/, const ros::Dura
     joint_handles_[i].setCommand(torques[i]);
   }
 
-  ROS_INFO_STREAM("Positional Error: " << P_error.transpose());
+  // ROS_INFO_STREAM("Positional Error: " << P_error.transpose());
+
+  Eigen::Map<Eigen::Matrix<double, 7, 1>> tau_J(robot_state.tau_J.data());
+  Eigen::Map<Eigen::Matrix<double, 7, 1>> _tau_J_d(robot_state.tau_J_d.data());
+
+  // get gravitational terms
+  std::array<double, 7> gravitational_array = model_handle_->getGravity();
+  Eigen::Map<Eigen::Matrix<double, 7, 1>> gravitational(gravitational_array.data());
+
+  // ROS_INFO_STREAM("=========================================");
+  // ROS_INFO_STREAM("Torque Error     : " << (tau_J - tau_J_d - gravitational).transpose());
+  // ROS_INFO_STREAM("ddq Commanded    : " << ddq_cmd.transpose());
+  // ROS_INFO_STREAM("Torque Commanded : " << torques.transpose());
+  // ROS_INFO_STREAM("Torque Measured  : " << tau_J.transpose());
+  // ROS_INFO_STREAM("Torque Desired   : " << tau_J_d.transpose());
 }
 
 Eigen::Matrix<double, 7, 1> JointPDTestPinController::saturateTorqueRate(

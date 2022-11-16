@@ -89,6 +89,20 @@ bool JointPDTestController::init(hardware_interface::RobotHW* robot_hw,
     }
   }
 
+  if (!node_handle.getParam("k_gains", k_gains_) || k_gains_.size() != 7) {
+    ROS_ERROR(
+        "JointPDTestController:  Invalid or no k_gain parameters provided, aborting "
+        "controller init!");
+    return false;
+  }
+
+  if (!node_handle.getParam("d_gains", d_gains_) || d_gains_.size() != 7) {
+    ROS_ERROR(
+        "JointPDTestController:  Invalid or no d_gain parameters provided, aborting "
+        "controller init!");
+    return false;
+  }
+
   read_gains(node_handle);
 
   return true;
@@ -107,6 +121,12 @@ void JointPDTestController::starting(const ros::Time& /* time */) {
   
   // initialize clock
   controlller_clock = 0.0;
+
+  Eigen::Map<Eigen::Matrix<double, 7, 1>> k_gains_array(k_gains_.data());
+  Eigen::Map<Eigen::Matrix<double, 7, 1>> d_gains_array(d_gains_.data());
+
+  Kp = k_gains_array.array().matrix().asDiagonal();
+  Kd = d_gains_array.array().matrix().asDiagonal();
 }
 
 void JointPDTestController::update(const ros::Time& /*time*/, const ros::Duration& period) {
@@ -133,11 +153,14 @@ void JointPDTestController::update(const ros::Time& /*time*/, const ros::Duratio
   Eigen::AngleAxisd AngleAxisErr(R_error);
   Eigen::Vector3d rotvec_err = AngleAxisErr.axis() * AngleAxisErr.angle();
 
+  double amplitude = 0.3;
+  double half_period = 3.0;
+
   // compute new p_target along the y-axis
-  p_target[1] = std::sin(M_PI * controlller_clock / 5) * 0.2;
+  p_target[1] = std::sin(M_PI * controlller_clock / half_period) * amplitude;
 
   // compute new dP_target along the y-axis
-  dP_target[1] = (M_PI / 5) * std::cos(M_PI * controlller_clock / 5) * 0.2;
+  dP_target[1] = (M_PI / half_period) * std::cos(M_PI * controlller_clock / half_period) * amplitude;
 
   // compute positional error
   Eigen::Matrix<double, 6, 1> P_error;
@@ -149,8 +172,24 @@ void JointPDTestController::update(const ros::Time& /*time*/, const ros::Duratio
   // compute joint target
   delta_q_target = pinv_jacobian * P_error;
 
+  // get mass matrix
+  std::array<double, 49> mass_array = model_handle_->getMass();
+  Eigen::Map<Eigen::Matrix<double, 7, 7>> M(mass_array.data());
+
+  // get Coriolis and centrifugal terms
+  std::array<double, 7> coriolis_array = model_handle_->getCoriolis();
+  Eigen::Map<Eigen::Matrix<double, 7, 1>> coriolis(coriolis_array.data());
+
+  // get gravitational terms
+  std::array<double, 7> gravitational_array = model_handle_->getGravity();
+  Eigen::Map<Eigen::Matrix<double, 7, 1>> gravitational(gravitational_array.data());
+
+  auto ddq_cmd = Kp * delta_q_target + Kd * (pinv_jacobian * dP_target - dq);
+
   // compute joint torque
-  torques = p_gain * delta_q_target + d_gain * (pinv_jacobian * dP_target - dq) - dq_gain * dq;
+  // torques = Kp * delta_q_target + Kd * (pinv_jacobian * dP_target - dq) - dq_gain * dq;
+  torques = M * ddq_cmd + coriolis;
+  // torques = M * ddq_cmd;
 
   // Saturate torque rate to avoid discontinuities
   torques << saturateTorqueRate(torques, tau_J_d);
@@ -160,7 +199,16 @@ void JointPDTestController::update(const ros::Time& /*time*/, const ros::Duratio
     joint_handles_[i].setCommand(torques[i]);
   }
 
-  ROS_INFO_STREAM("Positional Error: " << P_error.transpose());
+  Eigen::Map<Eigen::Matrix<double, 7, 1>> tau_J(robot_state.tau_J.data());
+  Eigen::Map<Eigen::Matrix<double, 7, 1>> _tau_J_d(robot_state.tau_J_d.data());
+
+  // ROS_INFO_STREAM("Positional Error: " << P_error.transpose());
+  ROS_INFO_STREAM("=========================================");
+  ROS_INFO_STREAM("Torque Error     : " << (tau_J - tau_J_d - gravitational).transpose());
+  ROS_INFO_STREAM("ddq Commanded    : " << ddq_cmd.transpose());
+  ROS_INFO_STREAM("Torque Commanded : " << torques.transpose());
+  ROS_INFO_STREAM("Torque Measured  : " << tau_J.transpose());
+  ROS_INFO_STREAM("Torque Desired   : " << tau_J_d.transpose());
 }
 
 Eigen::Matrix<double, 7, 1> JointPDTestController::saturateTorqueRate(
@@ -178,19 +226,19 @@ Eigen::Matrix<double, 7, 1> JointPDTestController::saturateTorqueRate(
 bool JointPDTestController::read_gains(ros::NodeHandle& node_handle) {
   // check if got p_gain
   if (!node_handle.getParam("p_gain", p_gain)) {
-    ROS_ERROR_STREAM("JointPDTestController: Could not read parameter p_gain");
+    ROS_ERROR_STREAM("JointPDTestPinController: Could not read parameter p_gain");
     return false;
   }
 
   // check if got d_gain
   if (!node_handle.getParam("d_gain", d_gain)) {
-    ROS_ERROR_STREAM("JointPDTestController: Could not read parameter d_gain");
+    ROS_ERROR_STREAM("JointPDTestPinController: Could not read parameter d_gain");
     return false;
   }
 
   // check if got dq_gain
   if (!node_handle.getParam("dq_gain", dq_gain)) {
-    ROS_ERROR_STREAM("JointPDTestController: Could not read parameter dq_gain");
+    ROS_ERROR_STREAM("JointPDTestPinController: Could not read parameter dq_gain");
     return false;
   }
 

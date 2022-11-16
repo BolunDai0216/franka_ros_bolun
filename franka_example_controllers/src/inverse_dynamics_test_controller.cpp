@@ -91,10 +91,31 @@ bool InverseDynamicsTestController::init(hardware_interface::RobotHW* robot_hw,
     }
   }
 
+  if (!node_handle.getParam("k_gains", k_gains_) || k_gains_.size() != 6) {
+    ROS_ERROR(
+        "JointPDTestController:  Invalid or no k_gain parameters provided, aborting "
+        "controller init!");
+    return false;
+  }
+
+  if (!node_handle.getParam("d_gains", d_gains_) || d_gains_.size() != 6) {
+    ROS_ERROR(
+        "JointPDTestController:  Invalid or no d_gain parameters provided, aborting "
+        "controller init!");
+    return false;
+  }
+
+  if (!node_handle.getParam("td_gains", td_gains_) || td_gains_.size() != 7) {
+    ROS_ERROR(
+        "JointPDTestController:  Invalid or no td_gain parameters provided, aborting "
+        "controller init!");
+    return false;
+  }
+
   read_gains(node_handle);
 
   // build pin_robot from urdf
-  std::string urdf_filename = "/home/parallels/bolun_ws/src/franka_ros_bolun/franka_example_controllers/fr3.urdf";
+  std::string urdf_filename = "/home/bolun/bolun_ws/src/franka_ros_bolun/franka_example_controllers/fr3.urdf";
   pin::urdf::buildModel(urdf_filename, model);
   data = pin::Data(model);
 
@@ -120,6 +141,15 @@ void InverseDynamicsTestController::starting(const ros::Time& /* time */) {
   R_target = data.oMf[ee_frame_id].rotation();
   dP_target << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0;
   ddP_cmd << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0;
+
+  // get Kp and Kd gains
+  Eigen::Map<Eigen::Matrix<double, 6, 1>> k_gains_array(k_gains_.data());
+  Eigen::Map<Eigen::Matrix<double, 6, 1>> d_gains_array(d_gains_.data());
+  Eigen::Map<Eigen::Matrix<double, 7, 1>> td_gains_array(td_gains_.data());
+
+  Kp = k_gains_array.array().matrix().asDiagonal();
+  Kd = d_gains_array.array().matrix().asDiagonal();
+  tKd = td_gains_array.array().matrix().asDiagonal();
   
   // initialize clock
   controlller_clock = 0.0;
@@ -156,20 +186,20 @@ void InverseDynamicsTestController::update(const ros::Time& /*time*/, const ros:
   Eigen::Vector3d rotvec_err = AngleAxisErr.axis() * AngleAxisErr.angle();
 
   // compute new p_target along the y-axis
-  p_target[1] = std::sin(M_PI * controlller_clock / 5) * 0.2;
+  p_target[1] = (1 - std::cos(M_PI * controlller_clock / 5)) * 0.2;
 
   // compute new dP_target along the y-axis
-  dP_target[1] = (M_PI / 5) * std::cos(M_PI * controlller_clock / 5) * 0.2;
+  dP_target[1] = (M_PI / 5) * std::sin(M_PI * controlller_clock / 5) * 0.2;
 
   // compute new ddP_cmd along the y-axis
-  ddP_cmd[1] = -(M_PI * M_PI / 25) * std::sin(M_PI * controlller_clock / 5) * 0.2;
+  ddP_cmd[1] = (M_PI * M_PI / 25) * std::cos(M_PI * controlller_clock / 5) * 0.2;
 
   // compute positional error
   Eigen::Matrix<double, 6, 1> P_error;
   P_error << p_target - p_measured, rotvec_err;
 
   // compute pseudo-inverse of Jacobian
-  pseudoInverse(jacobian.transpose(), pinv_jacobian_transpose);
+  pseudoInverse(jacobian, pinv_jacobian);
 
   // compute joint target
   dP_error = dP_target - jacobian * dq;
@@ -180,7 +210,9 @@ void InverseDynamicsTestController::update(const ros::Time& /*time*/, const ros:
   
   // auto ddq_cmd = p_gain * (pinv_jacobian * P_error) + pinv_jacobian * d_gain * dP_target - d_gain * dq; // works
   
-  auto ddq_cmd = pinv_jacobian_transpose.transpose() * (ddP_cmd + p_gain * P_error + d_gain * dP_target - djacobian * dq) - d_gain * dq;
+  // auto ddq_cmd = pinv_jacobian * (ddP_cmd - djacobian * dq) - Kd * dq + Kp * pinv_jacobian * P_error + Kd * pinv_jacobian * dP_target;
+  auto ddq_cmd = pinv_jacobian * (ddP_cmd + Kp * P_error + Kd * dP_target - djacobian * dq) - tKd * dq;
+  // auto ddq_cmd = pinv_jacobian * (ddP_cmd + Kp * P_error + Kd * (dP_target - jacobian * dq) - djacobian * dq);
 
   // get mass matrix
   std::array<double, 49> mass_array = model_handle_->getMass();
@@ -200,8 +232,8 @@ void InverseDynamicsTestController::update(const ros::Time& /*time*/, const ros:
     joint_handles_[i].setCommand(torques[i]);
   }
 
-  // ROS_INFO_STREAM("Positional Error: " << P_error.transpose());
-  ROS_INFO_STREAM("pJ @ J: \n" << jacobian.transpose() * pinv_jacobian_transpose);
+  ROS_INFO_STREAM("Positional Error: " << P_error.transpose());
+  // ROS_INFO_STREAM("pJ @ J: \n" << jacobian.transpose() * pinv_jacobian_transpose);
 }
 
 Eigen::Matrix<double, 7, 1> InverseDynamicsTestController::saturateTorqueRate(

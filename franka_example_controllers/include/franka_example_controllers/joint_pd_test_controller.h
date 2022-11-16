@@ -69,6 +69,12 @@ class JointPDTestController : public controller_interface::MultiInterfaceControl
   double p_gain;
   double d_gain;
   double dq_gain;
+
+  Eigen::Matrix<double, 7, 7> Kp;
+  Eigen::Matrix<double, 7, 7> Kd;
+
+  std::vector<double> k_gains_;
+  std::vector<double> d_gains_;
 };
 
 }  // namespace franka_example_controllers

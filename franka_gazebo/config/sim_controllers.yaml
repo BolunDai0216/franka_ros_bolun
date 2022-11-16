@@ -167,6 +167,22 @@ joint_pd_test_controller:
         - $(arg arm_id)_joint5
         - $(arg arm_id)_joint6
         - $(arg arm_id)_joint7
+    k_gains:
+        - 600.0
+        - 600.0
+        - 600.0
+        - 600.0
+        - 250.0
+        - 150.0
+        - 50.0
+    d_gains:
+        - 50.0
+        - 50.0
+        - 50.0
+        - 20.0
+        - 20.0
+        - 20.0
+        - 10.0
     p_gain: 500.0
     d_gain: 10.0
     dq_gain: 1.0
@@ -182,6 +198,22 @@ joint_pd_test_pin_controller:
         - $(arg arm_id)_joint5
         - $(arg arm_id)_joint6
         - $(arg arm_id)_joint7
+    k_gains:
+        - 600.0
+        - 600.0
+        - 600.0
+        - 600.0
+        - 250.0
+        - 150.0
+        - 50.0
+    d_gains:
+        - 50.0
+        - 50.0
+        - 50.0
+        - 20.0
+        - 20.0
+        - 20.0
+        - 10.0
     p_gain: 500.0
     d_gain: 10.0
     dq_gain: 1.0
@@ -197,6 +229,44 @@ inverse_dynamics_test_controller:
         - $(arg arm_id)_joint5
         - $(arg arm_id)_joint6
         - $(arg arm_id)_joint7
+    # k_gains:
+    #     - 700.0
+    #     - 400.0
+    #     - 500.0
+    #     - 600.0
+    #     - 5000.0
+    #     - 3000.0
+    #     - 5000.0
+    # d_gains:
+    #     - 60.0
+    #     - 30.0
+    #     - 40.0
+    #     - 20.0
+    #     - 500.0
+    #     - 400.0
+    #     - 1000.0
+    k_gains:
+        - 50.0
+        - 50.0
+        - 50.0
+        - 1000.0
+        - 1000.0
+        - 1000.0
+    d_gains:
+        - 10.0
+        - 10.0
+        - 10.0
+        - 50.0
+        - 50.0
+        - 50.0
+    td_gains:
+        - 60.0
+        - 30.0
+        - 40.0
+        - 20.0
+        - 500.0
+        - 400.0
+        - 1000.0
     p_gain: 500.0
     d_gain: 10.0
     dq_gain: 1.0

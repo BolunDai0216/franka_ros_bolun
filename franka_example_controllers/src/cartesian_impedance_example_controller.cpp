@@ -197,6 +197,16 @@ void CartesianImpedanceExampleController::update(const ros::Time& /*time*/,
       position_and_orientation_d_target_mutex_);
   position_d_ = filter_params_ * position_d_target_ + (1.0 - filter_params_) * position_d_;
   orientation_d_ = orientation_d_.slerp(filter_params_, orientation_d_target_);
+
+  // get gravitational terms
+  std::array<double, 7> gravitational_array = model_handle_->getGravity();
+  Eigen::Map<Eigen::Matrix<double, 7, 1>> gravitational(gravitational_array.data());
+
+  Eigen::Map<Eigen::Matrix<double, 7, 1>> tau_J(robot_state.tau_J.data());
+  Eigen::Map<Eigen::Matrix<double, 7, 1>> _tau_J_d(robot_state.tau_J_d.data());
+  ROS_INFO_STREAM("Torque Error    : " << (tau_J - gravitational).transpose());
+  ROS_INFO_STREAM("Torque Measured : " << tau_J.transpose());
+  ROS_INFO_STREAM("Torque Desired  : " << tau_J_d.transpose());
 }
 
 Eigen::Matrix<double, 7, 1> CartesianImpedanceExampleController::saturateTorqueRate(

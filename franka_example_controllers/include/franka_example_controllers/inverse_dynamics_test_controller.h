@@ -85,12 +85,23 @@ class InverseDynamicsTestController : public controller_interface::MultiInterfac
   Eigen::Matrix<double, 6, 7> djacobian;
 
   // pseudo-inverse
-  Eigen::MatrixXd pinv_jacobian_transpose;
+  Eigen::MatrixXd pinv_jacobian;
 
   // define gains for pd controll
   double p_gain;
   double d_gain;
   double dq_gain;
+
+  // Eigen::Matrix<double, 7, 7> Kp;
+  // Eigen::Matrix<double, 7, 7> Kd;
+
+  Eigen::Matrix<double, 6, 6> Kp;
+  Eigen::Matrix<double, 6, 6> Kd;
+  Eigen::Matrix<double, 7, 7> tKd;
+
+  std::vector<double> k_gains_;
+  std::vector<double> d_gains_;
+  std::vector<double> td_gains_;
 };
 
 }  // namespace franka_example_controllers
