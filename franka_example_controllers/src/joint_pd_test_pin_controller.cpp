@@ -94,7 +94,7 @@ bool JointPDTestPinController::init(hardware_interface::RobotHW* robot_hw,
   read_gains(node_handle);
 
   // build pin_robot from urdf
-  std::string urdf_filename = "/home/parallels/bolun_ws/src/franka_ros_bolun/franka_example_controllers/fr3.urdf";
+  std::string urdf_filename = "/home/bolun/bolun_ws/src/franka_ros_bolun/franka_example_controllers/fr3.urdf";
   pin::urdf::buildModel(urdf_filename, model);
   data = pin::Data(model);
 
@@ -178,7 +178,7 @@ void JointPDTestPinController::update(const ros::Time& /*time*/, const ros::Dura
     joint_handles_[i].setCommand(torques[i]);
   }
 
-  ROS_INFO_STREAM("EE Position: " << p_measured.transpose());
+  ROS_INFO_STREAM("Positional Error: " << P_error.transpose());
 }
 
 Eigen::Matrix<double, 7, 1> JointPDTestPinController::saturateTorqueRate(
