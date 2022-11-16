@@ -79,4 +79,9 @@
       A PD controller for testing purpose.
     </description>
   </class>
+  <class name="franka_example_controllers/JointPDTestController" type="franka_example_controllers::JointPDTestController" base_class_type="controller_interface::ControllerBase">
+    <description>
+      A joint-space PD controller for testing purpose.
+    </description>
+  </class>
 </library>
